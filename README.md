@@ -78,6 +78,12 @@ Long-running tasks stream live progress to stderr. When `--json` is used,
 stdout stays reserved for the final machine-readable JSON payload. Use
 `--no-progress` to suppress live status output.
 
+Failed tasks exit non-zero and include a `heuriva show --trace <task_id>`
+recovery command when a trajectory exists. Ctrl+C exits `130`; after the
+runtime has created the task, stderr includes the full `task_id` and matching
+`show --trace` command. Model endpoint failures keep a classified cause such as
+`connection_error` or `timeout` in progress and saved runtime events.
+
 Inspect a stored trajectory:
 
 ```bash

@@ -16,7 +16,7 @@ from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
-from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeProgress
+from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_saved_trajectory
 
@@ -135,6 +135,14 @@ def run(
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
+    except RuntimeInterrupted as exc:
+        typer.echo(
+            "Interrupted. "
+            f"task_id={exc.task_id}; "
+            f"use `heuriva show --trace {exc.task_id}` to inspect saved trajectory",
+            err=True,
+        )
+        raise typer.Exit(130) from exc
     except KeyboardInterrupt as exc:
         typer.echo("Interrupted.", err=True)
         raise typer.Exit(130) from exc

@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from heuriva.clients.model import ModelChatResult, ModelClientError
+from heuriva.clients.model import ModelChatResult
 from heuriva.core.decision import (
     Decision,
     DecisionDraft,
@@ -64,7 +64,7 @@ class LLMController:
                 if draft.operator not in available_operators:
                     raise ValueError(f"operator {draft.operator.value} is not available")
                 return bind_decision(draft, state), events
-            except (json.JSONDecodeError, ValidationError, ValueError, ModelClientError) as exc:
+            except (json.JSONDecodeError, ValidationError, ValueError) as exc:
                 validation_error = str(exc)
                 events.append(
                     RuntimeEvent(

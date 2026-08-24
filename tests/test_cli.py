@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from heuriva.cli import app
-from heuriva.runtime.engine import RuntimeProgress, RuntimeResult
+from heuriva.runtime.engine import RuntimeInterrupted, RuntimeProgress, RuntimeResult
 
 
 def test_cli_help() -> None:
@@ -102,6 +102,24 @@ def test_cli_run_json_keeps_stdout_machine_readable_and_streams_progress(
     }
     assert "started task; final JSON will be printed on stdout" in result.stderr
     assert result.stdout.strip().startswith("{")
+
+
+def test_cli_run_interrupt_prints_full_task_id_and_show_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeEngine:
+        def run(self, task: str, *, trace: bool = False, progress: Any = None) -> RuntimeResult:
+            del task, trace, progress
+            raise RuntimeInterrupted("task-123456789")
+
+    monkeypatch.setattr("heuriva.cli._build_engine", lambda: FakeEngine())
+
+    result = CliRunner().invoke(app, ["run", "--json", "long task"])
+
+    assert result.exit_code == 130
+    assert result.stdout == ""
+    assert "Interrupted. task_id=task-123456789" in result.stderr
+    assert "heuriva show --trace task-123456789" in result.stderr
 
 
 def test_cli_show_missing_task_returns_not_found(

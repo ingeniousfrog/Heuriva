@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+from heuriva.clients.model import ModelClientError
 from heuriva.config import AppConfig
 from heuriva.controller.base import Controller
 from heuriva.core.common import new_id
@@ -14,6 +15,7 @@ from heuriva.core.observation import Observation, ObservationKind, ObservationSt
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState, StateStatus
 from heuriva.core.state_patch import OperationResult
+from heuriva.redaction import redact_text
 from heuriva.runtime.executor_router import ExecutorRouter
 from heuriva.runtime.state_updater import StateUpdater
 from heuriva.storage.sqlite import SQLiteStore
@@ -48,6 +50,12 @@ class RuntimeResult:
     final_answer: str | None
     steps: list[RuntimeStep]
     trace_lines: list[str]
+
+
+class RuntimeInterrupted(KeyboardInterrupt):
+    def __init__(self, task_id: str) -> None:
+        super().__init__(task_id)
+        self.task_id = task_id
 
 
 ProgressCallback = Callable[[RuntimeProgress], None]
@@ -174,7 +182,7 @@ class RuntimeEngine:
                         step_index=state.step_index,
                         event_type="runtime_error",
                         level=EventLevel.ERROR,
-                        payload={"error": exc.__class__.__name__, "message": str(exc)[:500]},
+                        payload=self._runtime_error_payload(exc),
                     )
                     self.store.log_event(event)
                     status = StateStatus.FAILED
@@ -184,7 +192,10 @@ class RuntimeEngine:
                         task_id=task_id,
                         step_index=state.step_index,
                         stage="runtime_error",
-                        message=f"runtime error: {exc.__class__.__name__}; finalizing as failed",
+                        message=(
+                            f"runtime error: {self._runtime_error_summary(exc)}; "
+                            "finalizing as failed"
+                        ),
                         started=started,
                     )
                     break
@@ -295,7 +306,7 @@ class RuntimeEngine:
                 termination_reason="keyboard_interrupt",
                 final_answer=None,
             )
-            raise
+            raise RuntimeInterrupted(task_id) from None
 
     def _available_for_state(self, state: CognitiveState) -> tuple[Operator, ...]:
         available = self.router.available_operators()
@@ -359,3 +370,26 @@ class RuntimeEngine:
             executor_kind=executor_kind,
             metadata=result.metadata,
         )
+
+    @staticmethod
+    def _runtime_error_payload(exc: Exception) -> dict[str, object]:
+        if isinstance(exc, ModelClientError):
+            return {
+                "error": exc.__class__.__name__,
+                "message": redact_text(exc.message)[:500],
+                "code": exc.code,
+                "retryable": exc.retryable,
+            }
+        return {
+            "error": exc.__class__.__name__,
+            "message": redact_text(str(exc))[:500],
+        }
+
+    @staticmethod
+    def _runtime_error_summary(exc: Exception) -> str:
+        if isinstance(exc, ModelClientError):
+            return f"{exc.__class__.__name__} {exc.code}: {redact_text(exc.message)[:180]}"
+        message = redact_text(str(exc))[:180]
+        if not message:
+            return exc.__class__.__name__
+        return f"{exc.__class__.__name__}: {message}"

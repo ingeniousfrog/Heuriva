@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from heuriva.clients.model import ModelChatResult, ModelClientError
 from heuriva.config import AppConfig
+from heuriva.controller.llm_controller import LLMController
+from heuriva.core.decision import Decision
 from heuriva.core.operator import Operator
-from heuriva.runtime.engine import RuntimeEngine, RuntimeProgress
+from heuriva.core.state import CognitiveState
+from heuriva.core.state_patch import OperationResult
+from heuriva.runtime.engine import RuntimeEngine, RuntimeInterrupted, RuntimeProgress
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.testing.fakes import (
     FakeController,
@@ -134,3 +141,65 @@ def test_runtime_empty_final_answer_reaches_max_steps(tmp_path: Path) -> None:
 
     assert result.status == "max_steps_reached"
     assert result.final_answer is None
+
+
+def test_runtime_interrupt_finalizes_and_exposes_task_id(tmp_path: Path) -> None:
+    class InterruptingExecutor:
+        def execute(self, decision: Decision, state: CognitiveState) -> OperationResult:
+            del decision, state
+            raise KeyboardInterrupt
+
+    store = SQLiteStore(tmp_path / "memory.db")
+    engine = RuntimeEngine(
+        config=AppConfig.model_validate({"storage": {"sqlite_path": str(tmp_path / "memory.db")}}),
+        store=store,
+        controller=FakeController([make_analyze_decision("Wait")]),
+        executors={Operator.ANALYZE: InterruptingExecutor()},
+    )
+
+    with pytest.raises(RuntimeInterrupted) as exc_info:
+        engine.run("Explain")
+
+    data = store.get_trajectory(exc_info.value.task_id)
+    assert data["trajectory"]["status"] == "interrupted"
+    assert data["trajectory"]["termination_reason"] == "keyboard_interrupt"
+    assert data["steps"] == []
+    assert [event["event_type"] for event in data["events"]] == ["interrupted"]
+
+
+def test_runtime_preserves_model_connection_error_in_failure_event(tmp_path: Path) -> None:
+    progress_events: list[RuntimeProgress] = []
+
+    class FailingModelClient:
+        def chat(self, messages: list[dict[str, str]]) -> ModelChatResult:
+            del messages
+            raise ModelClientError(
+                "connection_error",
+                "could not connect to model endpoint",
+            )
+
+    store = SQLiteStore(tmp_path / "memory.db")
+    engine = RuntimeEngine(
+        config=AppConfig.model_validate({"storage": {"sqlite_path": str(tmp_path / "memory.db")}}),
+        store=store,
+        controller=LLMController(model_client=FailingModelClient()),
+        executors={},
+    )
+
+    result = engine.run("Explain", progress=progress_events.append)
+    data = store.get_trajectory(result.task_id)
+
+    assert result.status == "failed"
+    assert data["trajectory"]["termination_reason"] == "runtime_error"
+    assert data["steps"] == []
+    assert [event["event_type"] for event in data["events"]] == ["runtime_error"]
+    assert data["events"][0]["payload"] == {
+        "error": "ModelClientError",
+        "message": "could not connect to model endpoint",
+        "code": "connection_error",
+        "retryable": False,
+    }
+    runtime_progress = [event for event in progress_events if event.stage == "runtime_error"]
+    assert len(runtime_progress) == 1
+    assert "connection_error" in runtime_progress[0].message
+    assert "could not connect to model endpoint" in runtime_progress[0].message
