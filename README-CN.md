@@ -53,7 +53,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 ```mermaid
 flowchart TD
     User["用户 / CLI"] --> CLI["heuriva.cli"]
-    CLI --> Config["config.py<br/>config.yaml + env"]
+    CLI --> Config["src/heuriva/config.py<br/>~/.heuriva/config.yaml + env"]
     CLI --> Engine["RuntimeEngine"]
 
     Config --> ModelClient["OpenAI-compatible<br/>ModelClient"]
