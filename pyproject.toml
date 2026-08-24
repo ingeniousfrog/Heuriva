@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "heuriva"
+version = "0.1.0"
+description = "An adaptive cognitive runtime for language models."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Heuriva contributors" }]
+dependencies = [
+  "ddgs>=9,<10",
+  "httpx>=0.27",
+  "pydantic>=2,<3",
+  "python-dotenv>=1",
+  "PyYAML>=6",
+  "rich>=13",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "hatchling>=1.25",
+  "mypy>=1.10",
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+heuriva = "heuriva.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/heuriva"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+  "/pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["heuriva"]
+ignore_missing_imports = true

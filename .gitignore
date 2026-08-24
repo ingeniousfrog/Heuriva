@@ -1,0 +1,13 @@
+# Local planning docs — do not publish
+plan.md
+
+# Local development artifacts
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+__pycache__/
+build/
+dist/
+*.egg-info/

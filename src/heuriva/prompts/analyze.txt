@@ -1,0 +1,1 @@
+Analyze the current task state and return concise reasoning as data.

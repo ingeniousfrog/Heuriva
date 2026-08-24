@@ -1,0 +1,221 @@
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from heuriva.clients.model import ModelClient
+from heuriva.clients.search import SearchClient
+from heuriva.config import api_key_for, load_config, setup_config
+from heuriva.controller.llm_controller import LLMController
+from heuriva.core.operator import Operator
+from heuriva.executors.llm import LLMExecutor
+from heuriva.executors.search import SearchExecutor
+from heuriva.runtime.engine import Executor, RuntimeEngine
+from heuriva.storage.sqlite import SQLiteStore
+from heuriva.trace import render_saved_trajectory
+
+app = typer.Typer(add_completion=False, invoke_without_command=True)
+
+
+@app.callback(invoke_without_command=True)
+def root(
+    ctx: typer.Context,
+    trace: Annotated[bool, typer.Option("--trace", help="Show detailed per-step trace.")] = False,
+) -> None:
+    if ctx.invoked_subcommand is None:
+        _repl(trace=trace)
+
+
+@app.command()
+def setup(
+    force: Annotated[
+        bool, typer.Option("--force", help="Overwrite existing local config.")
+    ] = False,
+) -> None:
+    result = setup_config(force=force)
+    if result.created_config:
+        typer.echo(f"Created {result.config_path}", err=True)
+    else:
+        typer.echo(f"Kept existing {result.config_path}", err=True)
+    if result.created_env:
+        typer.echo(f"Created {result.env_path}", err=True)
+    else:
+        typer.echo(f"Kept existing {result.env_path}", err=True)
+    typer.echo(
+        "Default endpoint is Cursor-compatible local auto: http://localhost:8765/v1",
+        err=True,
+    )
+    typer.echo(
+        "Model requests may leave this machine; search sends queries to a "
+        "third-party search provider.",
+        err=True,
+    )
+
+
+@app.command()
+def doctor(
+    probe: Annotated[bool, typer.Option("--probe", help="Send a minimal chat completion.")] = False,
+) -> None:
+    try:
+        config = load_config()
+    except Exception as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    db_status = SQLiteStore.schema_status(config.storage.sqlite_path)
+    typer.echo(f"Config: {Path.home() / '.heuriva' / 'config.yaml'}", err=True)
+    typer.echo(f"Endpoint: {config.llm.base_url}", err=True)
+    typer.echo(f"Model: {config.llm.model}", err=True)
+    typer.echo(f"SQLite schema: {db_status}", err=True)
+    model_client = ModelClient(
+        base_url=config.llm.base_url,
+        model=config.llm.model,
+        api_key=api_key_for(config),
+        connect_timeout_seconds=min(config.llm.connect_timeout_seconds, 1.0),
+        read_timeout_seconds=min(config.llm.read_timeout_seconds, 2.0),
+    )
+    try:
+        ok, message = model_client.models_probe()
+        level = "ok" if ok else "warning"
+        typer.echo(f"Models endpoint: {level} ({message})", err=True)
+        if probe:
+            response = model_client.chat([{"role": "user", "content": "Reply with ok."}])
+            typer.echo(f"Chat probe: ok ({len(response.content)} chars)", err=True)
+    except Exception as exc:
+        typer.echo(f"Model probe warning: {exc.__class__.__name__}: {exc}", err=True)
+    finally:
+        model_client.close()
+
+
+@app.command()
+def run(
+    task: Annotated[list[str], typer.Argument(help="Task text.")],
+    trace: Annotated[bool, typer.Option("--trace", help="Show detailed trace.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+) -> None:
+    text = " ".join(task).strip()
+    if not text:
+        typer.echo("Task must not be empty.", err=True)
+        raise typer.Exit(2)
+    try:
+        engine = _build_engine()
+        result = engine.run(text, trace=trace)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt as exc:
+        typer.echo("Interrupted.", err=True)
+        raise typer.Exit(130) from exc
+    except Exception as exc:
+        typer.echo(f"Runtime failed: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "task_id": result.task_id,
+                    "status": result.status,
+                    "final_answer": result.final_answer,
+                },
+                ensure_ascii=False,
+            )
+        )
+    else:
+        for line in result.trace_lines:
+            typer.echo(line, err=True)
+        if result.final_answer:
+            typer.echo(result.final_answer)
+        else:
+            typer.echo(f"Task {result.task_id} ended with status {result.status}", err=True)
+    if result.status != "done":
+        raise typer.Exit(3)
+
+
+@app.command()
+def show(
+    task_id: Annotated[str, typer.Argument(help="Task ID to inspect.")],
+    trace: Annotated[bool, typer.Option("--trace", help="Show observations and events.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+) -> None:
+    try:
+        config = load_config()
+        data = SQLiteStore(config.storage.sqlite_path).get_trajectory(task_id)
+    except KeyError as exc:
+        typer.echo(f"Task not found: {task_id}", err=True)
+        raise typer.Exit(4) from exc
+    except Exception as exc:
+        typer.echo(f"Could not read task: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    if json_output:
+        typer.echo(json.dumps(data, ensure_ascii=False))
+    else:
+        typer.echo(render_saved_trajectory(data, trace=trace))
+
+
+def _build_engine() -> RuntimeEngine:
+    config = load_config()
+    store = SQLiteStore(config.storage.sqlite_path)
+    model_client = ModelClient(
+        base_url=config.llm.base_url,
+        model=config.llm.model,
+        api_key=api_key_for(config),
+        connect_timeout_seconds=config.llm.connect_timeout_seconds,
+        read_timeout_seconds=config.llm.read_timeout_seconds,
+    )
+    controller = LLMController(
+        model_client=model_client,
+        repair_attempts=config.runtime.controller_repair_attempts,
+    )
+    executors: dict[Operator, Executor] = {
+        Operator.ANALYZE: LLMExecutor(model_client=model_client),
+        Operator.ANSWER: LLMExecutor(model_client=model_client),
+    }
+    if config.tools.search.enabled:
+        executors[Operator.SEARCH] = SearchExecutor(
+            search_client=SearchClient(
+                max_results=config.tools.search.max_results,
+                timeout_seconds=config.tools.search.timeout_seconds,
+            )
+        )
+    return RuntimeEngine(config=config, store=store, controller=controller, executors=executors)
+
+
+def _repl(*, trace: bool) -> None:
+    typer.echo("Heuriva interactive mode. Type :quit or press Ctrl-D to exit.", err=True)
+    while True:
+        try:
+            line = input("heuriva> ")
+        except EOFError:
+            typer.echo("", err=True)
+            return
+        if line.strip() in {":quit", ":exit"}:
+            return
+        if not line.strip():
+            continue
+        sys.argv = [sys.argv[0], "run", line]
+        try:
+            engine = _build_engine()
+            result = engine.run(line, trace=trace)
+            for trace_line in result.trace_lines:
+                typer.echo(trace_line, err=True)
+            if result.final_answer:
+                typer.echo(result.final_answer)
+            else:
+                typer.echo(f"Task {result.task_id} ended with status {result.status}", err=True)
+        except Exception as exc:
+            typer.echo(f"Task failed: {exc}", err=True)
+
+
+def main() -> None:
+    app()
+
+
+if __name__ == "__main__":
+    main()

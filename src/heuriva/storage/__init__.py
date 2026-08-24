@@ -1,0 +1,1 @@
+"""SQLite trajectory storage."""
