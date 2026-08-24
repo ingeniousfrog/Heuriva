@@ -125,7 +125,10 @@ heuriva doctor --probe --probe-timeout 30
 
 ```bash
 heuriva run --trace "分析这个项目是否值得做成产品"
+heuriva run --json "分析这个项目是否值得做成产品"
 ```
+
+长任务会把实时进度输出到 stderr。使用 `--json` 时，stdout 仍只保留最终机器可读 JSON，方便脚本解析；如果不需要实时状态，可以加 `--no-progress` 关闭。
 
 查看已落库轨迹：
 
@@ -209,7 +212,7 @@ ANSWER  -> llm
 .venv/bin/python -m hatchling build
 ```
 
-自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor，以及两条不同 fake runtime 路径：
+自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout，以及两条不同 fake runtime 路径：
 
 - `ANALYZE -> SEARCH -> ANSWER`
 - `ANALYZE -> ANSWER`

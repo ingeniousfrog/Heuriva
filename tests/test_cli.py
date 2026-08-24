@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from heuriva.cli import app
+from heuriva.runtime.engine import RuntimeProgress, RuntimeResult
 
 
 def test_cli_help() -> None:
@@ -61,6 +63,45 @@ def test_cli_doctor_probe_timeout_overrides_quick_default(
     assert captured[0]["read_timeout_seconds"] == 2.0
     assert captured[1]["read_timeout_seconds"] == 30.0
     assert "Probe timeout: 30s" in custom_probe.stderr
+
+
+def test_cli_run_json_keeps_stdout_machine_readable_and_streams_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeEngine:
+        def run(self, task: str, *, trace: bool = False, progress: Any = None) -> RuntimeResult:
+            assert task == "demo task"
+            assert trace is False
+            assert progress is not None
+            progress(
+                RuntimeProgress(
+                    task_id="task-123456",
+                    step_index=0,
+                    stage="task_started",
+                    message="started task; final JSON will be printed on stdout",
+                    elapsed_seconds=0.0,
+                )
+            )
+            return RuntimeResult(
+                task_id="task-123456",
+                status="done",
+                final_answer="done",
+                steps=[],
+                trace_lines=[],
+            )
+
+    monkeypatch.setattr("heuriva.cli._build_engine", lambda: FakeEngine())
+
+    result = CliRunner().invoke(app, ["run", "--json", "demo task"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "task_id": "task-123456",
+        "status": "done",
+        "final_answer": "done",
+    }
+    assert "started task; final JSON will be printed on stdout" in result.stderr
+    assert result.stdout.strip().startswith("{")
 
 
 def test_cli_show_missing_task_returns_not_found(

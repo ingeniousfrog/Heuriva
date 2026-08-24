@@ -4,7 +4,7 @@ from pathlib import Path
 
 from heuriva.config import AppConfig
 from heuriva.core.operator import Operator
-from heuriva.runtime.engine import RuntimeEngine
+from heuriva.runtime.engine import RuntimeEngine, RuntimeProgress
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.testing.fakes import (
     FakeController,
@@ -71,6 +71,33 @@ def test_runtime_can_finish_without_search_when_controller_chooses_so(tmp_path: 
 
     assert result.status == "done"
     assert [step.decision.operator for step in result.steps] == [Operator.ANALYZE, Operator.ANSWER]
+
+
+def test_runtime_emits_live_progress_events(tmp_path: Path) -> None:
+    progress_events: list[RuntimeProgress] = []
+    engine = RuntimeEngine(
+        config=AppConfig.model_validate(
+            {"runtime": {"max_steps": 1}, "storage": {"sqlite_path": str(tmp_path / "memory.db")}}
+        ),
+        store=SQLiteStore(tmp_path / "memory.db"),
+        controller=FakeController([make_answer_decision("Answer")]),
+        executors={Operator.ANSWER: FakeExecutor("final", final_answer="Final answer")},
+    )
+
+    result = engine.run("Explain", progress=progress_events.append)
+
+    assert result.status == "done"
+    assert [event.stage for event in progress_events] == [
+        "task_started",
+        "controller_selecting",
+        "operator_selected",
+        "executor_running",
+        "step_committed",
+        "task_finished",
+    ]
+    assert progress_events[2].operator == "ANSWER"
+    assert "selected ANSWER" in progress_events[2].message
+    assert "use `heuriva show --trace" in progress_events[-1].message
 
 
 def test_runtime_last_step_only_exposes_answer(tmp_path: Path) -> None:

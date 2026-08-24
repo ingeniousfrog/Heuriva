@@ -71,7 +71,12 @@ Run a task:
 
 ```bash
 heuriva run --trace "Analyze whether this project should become a product"
+heuriva run --json "Analyze whether this project should become a product"
 ```
+
+Long-running tasks stream live progress to stderr. When `--json` is used,
+stdout stays reserved for the final machine-readable JSON payload. Use
+`--no-progress` to suppress live status output.
 
 Inspect a stored trajectory:
 
@@ -160,8 +165,8 @@ Automated checks used for this implementation:
 The fake test suite covers schema immutability, config precedence, redaction,
 OpenAI-compatible client response handling, controller malformed JSON repair,
 router separation, state patch application, SQLite rollback, CLI setup/doctor,
-and dynamic runtime paths including both `ANALYZE -> SEARCH -> ANSWER` and
-`ANALYZE -> ANSWER`.
+live run progress on stderr without polluting JSON stdout, and dynamic runtime
+paths including both `ANALYZE -> SEARCH -> ANSWER` and `ANALYZE -> ANSWER`.
 
 Live verification should be recorded separately:
 

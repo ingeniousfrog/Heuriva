@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
@@ -14,7 +16,7 @@ from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
-from heuriva.runtime.engine import Executor, RuntimeEngine
+from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeProgress
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_saved_trajectory
 
@@ -116,6 +118,9 @@ def run(
     json_output: Annotated[
         bool, typer.Option("--json", help="Emit machine-readable JSON.")
     ] = False,
+    progress_output: Annotated[
+        bool, typer.Option("--progress/--no-progress", help="Show live progress on stderr.")
+    ] = True,
 ) -> None:
     text = " ".join(task).strip()
     if not text:
@@ -123,7 +128,10 @@ def run(
         raise typer.Exit(2)
     try:
         engine = _build_engine()
-        result = engine.run(text, trace=trace)
+        progress: Callable[[RuntimeProgress], None] | None = None
+        if progress_output:
+            progress = partial(_emit_progress, json_output=json_output)
+        result = engine.run(text, trace=trace, progress=progress)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
@@ -153,6 +161,18 @@ def run(
             typer.echo(f"Task {result.task_id} ended with status {result.status}", err=True)
     if result.status != "done":
         raise typer.Exit(3)
+
+
+def _emit_progress(event: RuntimeProgress, *, json_output: bool) -> None:
+    message = event.message
+    if json_output and event.stage == "task_started" and "stdout" not in message:
+        message = f"{message}; final JSON will be printed on stdout"
+    operator = f" {event.operator}" if event.operator else ""
+    typer.echo(
+        f"[{event.task_id[:8]} step {event.step_index} +{event.elapsed_seconds:.1f}s]"
+        f" {event.stage}{operator}: {message}",
+        err=True,
+    )
 
 
 @app.command()

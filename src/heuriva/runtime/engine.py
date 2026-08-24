@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -32,12 +32,25 @@ class RuntimeStep:
 
 
 @dataclass(frozen=True)
+class RuntimeProgress:
+    task_id: str
+    step_index: int
+    stage: str
+    message: str
+    elapsed_seconds: float
+    operator: str | None = None
+
+
+@dataclass(frozen=True)
 class RuntimeResult:
     task_id: str
     status: str
     final_answer: str | None
     steps: list[RuntimeStep]
     trace_lines: list[str]
+
+
+ProgressCallback = Callable[[RuntimeProgress], None]
 
 
 class RuntimeEngine:
@@ -56,7 +69,13 @@ class RuntimeEngine:
         self.router = ExecutorRouter(search_enabled=config.tools.search.enabled)
         self.updater = StateUpdater()
 
-    def run(self, task: str, *, trace: bool = False) -> RuntimeResult:
+    def run(
+        self,
+        task: str,
+        *,
+        trace: bool = False,
+        progress: ProgressCallback | None = None,
+    ) -> RuntimeResult:
         goal = task.strip()
         if not goal:
             raise ValueError("task must not be empty")
@@ -72,13 +91,38 @@ class RuntimeEngine:
         final_answer: str | None = None
         status = StateStatus.MAX_STEPS_REACHED
         termination_reason = "max_steps_reached"
+        self._notify_progress(
+            progress,
+            task_id=task_id,
+            step_index=state.step_index,
+            stage="task_started",
+            message="started task",
+            started=started,
+        )
         try:
             for _ in range(self.config.runtime.max_steps):
                 if time.monotonic() - started > self.config.runtime.max_task_seconds:
                     status = StateStatus.FAILED
                     termination_reason = "max_task_seconds"
+                    self._notify_progress(
+                        progress,
+                        task_id=task_id,
+                        step_index=state.step_index,
+                        stage="task_limit_reached",
+                        message="task exceeded max_task_seconds; finalizing as failed",
+                        started=started,
+                    )
                     break
                 available = self._available_for_state(state)
+                available_names = ", ".join(operator.value for operator in available)
+                self._notify_progress(
+                    progress,
+                    task_id=task_id,
+                    step_index=state.step_index,
+                    stage="controller_selecting",
+                    message=f"selecting next operator from {available_names}",
+                    started=started,
+                )
                 try:
                     decision, events = self.controller.select(
                         state=state,
@@ -88,8 +132,41 @@ class RuntimeEngine:
                     )
                     for event in events:
                         self.store.log_event(event)
+                        if event.level is EventLevel.WARNING:
+                            self._notify_progress(
+                                progress,
+                                task_id=task_id,
+                                step_index=state.step_index,
+                                stage="controller_warning",
+                                message=(
+                                    f"controller warning: {event.event_type}; "
+                                    "repaired internally and continuing"
+                                ),
+                                started=started,
+                            )
                     executor_kind = self.router.resolve(decision)
                     executor = self.executors[decision.operator]
+                    self._notify_progress(
+                        progress,
+                        task_id=task_id,
+                        step_index=state.step_index,
+                        stage="operator_selected",
+                        message=(
+                            f"selected {decision.operator.value}; "
+                            f"next: execute with {executor_kind}"
+                        ),
+                        operator=decision.operator.value,
+                        started=started,
+                    )
+                    self._notify_progress(
+                        progress,
+                        task_id=task_id,
+                        step_index=state.step_index,
+                        stage="executor_running",
+                        message=f"executing {decision.operator.value}; waiting for result",
+                        operator=decision.operator.value,
+                        started=started,
+                    )
                     result = executor.execute(decision, state)
                 except Exception as exc:
                     event = RuntimeEvent(
@@ -102,6 +179,14 @@ class RuntimeEngine:
                     self.store.log_event(event)
                     status = StateStatus.FAILED
                     termination_reason = "runtime_error"
+                    self._notify_progress(
+                        progress,
+                        task_id=task_id,
+                        step_index=state.step_index,
+                        stage="runtime_error",
+                        message=f"runtime error: {exc.__class__.__name__}; finalizing as failed",
+                        started=started,
+                    )
                     break
                 observation = self._observation_from_result(
                     decision=decision,
@@ -145,6 +230,21 @@ class RuntimeEngine:
                 steps.append(
                     RuntimeStep(decision=decision, observation=observation, state=state_after)
                 )
+                next_action = "continue planning"
+                if status in {StateStatus.DONE, StateStatus.FAILED}:
+                    next_action = "finalize task"
+                self._notify_progress(
+                    progress,
+                    task_id=task_id,
+                    step_index=decision.step_index,
+                    stage="step_committed",
+                    message=(
+                        f"committed {decision.operator.value} step with "
+                        f"{observation.status.value}; next: {next_action}"
+                    ),
+                    operator=decision.operator.value,
+                    started=started,
+                )
                 state = state_after
                 if status in {StateStatus.DONE, StateStatus.FAILED}:
                     break
@@ -159,6 +259,17 @@ class RuntimeEngine:
                 status=status.value,
                 termination_reason=termination_reason,
                 final_answer=final_answer,
+            )
+            self._notify_progress(
+                progress,
+                task_id=task_id,
+                step_index=state.step_index,
+                stage="task_finished",
+                message=(
+                    f"finished with status={status.value}; "
+                    f"use `heuriva show --trace {task_id}` to inspect saved trajectory"
+                ),
+                started=started,
             )
             return RuntimeResult(
                 task_id=task_id,
@@ -192,6 +303,30 @@ class RuntimeEngine:
         if remaining <= 1:
             return (Operator.ANSWER,)
         return available
+
+    @staticmethod
+    def _notify_progress(
+        progress: ProgressCallback | None,
+        *,
+        task_id: str,
+        step_index: int,
+        stage: str,
+        message: str,
+        started: float,
+        operator: str | None = None,
+    ) -> None:
+        if progress is None:
+            return
+        progress(
+            RuntimeProgress(
+                task_id=task_id,
+                step_index=step_index,
+                stage=stage,
+                message=message,
+                elapsed_seconds=max(0.0, time.monotonic() - started),
+                operator=operator,
+            )
+        )
 
     @staticmethod
     def _observation_from_result(
