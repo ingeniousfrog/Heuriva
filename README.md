@@ -4,11 +4,11 @@
 
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.1 focuses on
-one local experiment: can a frozen-weight model produce a visible,
-serializable, inspectable task-solving trajectory when the runtime keeps
-explicit state and asks a controller to choose only the next cognitive
-operation?
+Heuriva is a Python CLI cognitive runtime for language models. v0.2 keeps the
+small three-operator runtime from v0.1 and makes each task run easier to
+explain, recover, and verify: the runtime tracks material state progress, guards
+low-progress loops, validates evidence citations in final answers, and records
+richer diagnostics in the local trajectory store.
 
 ## Current Status
 
@@ -28,18 +28,28 @@ Implemented in this repository:
   trajectory records
 - SQLite trajectory store with schema versioning, foreign keys, unique step
   constraints, and atomic step commits
-- Concise and detailed trace rendering
-- Automated fake model/search tests for core runtime paths
+- Runtime-owned progress policy with same-operator, no-material-progress, and
+  answer-reserve guards
+- State delta rendering for concise trace, `show --trace`, and `show --json`
+- Evidence-aware ANSWER prompt plus deterministic `[S1]` citation validation
+  against saved state evidence
+- Retryable model HTTP failures controlled by `llm.max_retries`, with
+  `attempt_count` metadata
+- Search timeout classification, stale running task diagnostics, and opt-in live
+  smoke tests
+- Automated fake model/search tests for core v0.1 and v0.2 runtime paths
 
-Not implemented in v0.1:
+Not implemented:
 
 - Learning policies, policy lifecycle, replay, benchmark runner, evaluation
   tables, vector database, dashboard, MCP, shell/filesystem/Python executors,
   multi-agent workflows, URL crawling, daemon mode, task resume, or concurrent
   queues
+- A separate `VERIFY` operator. v0.2 still uses only `ANALYZE`, `SEARCH`, and
+  `ANSWER`.
 
-Live Cursor endpoint and real web search smoke tests are opt-in and were not
-run as part of the automated test suite.
+Live Cursor-compatible endpoint and real web search smoke tests are opt-in and
+are skipped by the default automated test suite.
 
 ## Install For Development
 
@@ -115,6 +125,21 @@ llm:
   base_url: http://localhost:8765/v1
   model: auto
   api_key_env: HEURIVA_API_KEY
+
+runtime:
+  max_steps: 20
+  max_task_seconds: 600
+  controller_repair_attempts: 1
+  max_consecutive_failures: 3
+  max_same_operator_streak: 3
+  max_no_progress_steps: 2
+  answer_reserve_steps: 2
+
+tools:
+  search:
+    enabled: true
+    max_results: 5
+    timeout_seconds: 15
 ```
 
 Supported environment overrides:
@@ -154,8 +179,22 @@ SEARCH  -> search
 ANSWER  -> llm
 ```
 
-When only one step remains, the runtime exposes only `ANSWER` to force a final
-attempt instead of allowing an endless analysis/search loop.
+Before each controller decision, the runtime applies a deterministic progress
+policy. It can narrow the available operators when repeated steps stop changing
+material state, when the same operator repeats too long, or when the task is
+inside the answer reserve. Guard interventions are written as runtime events
+and shown in progress output.
+
+Material progress is limited to structured state changes such as new evidence,
+known items backed by evidence, resolved unknowns, new failure classification,
+or a validated final answer. Bookkeeping-only changes, repeated content, and
+confidence-only changes do not count.
+
+If `SEARCH` has saved evidence, a successful `ANSWER` must cite at least one
+known label such as `[S1]`. Unknown labels or missing required citations produce
+an `answer_validation_error` observation instead of `done`, leaving the
+trajectory readable and allowing a later ANSWER attempt within the remaining
+budget.
 
 ## Verification
 
@@ -171,8 +210,11 @@ Automated checks used for this implementation:
 The fake test suite covers schema immutability, config precedence, redaction,
 OpenAI-compatible client response handling, controller malformed JSON repair,
 router separation, state patch application, SQLite rollback, CLI setup/doctor,
-live run progress on stderr without polluting JSON stdout, and dynamic runtime
-paths including both `ANALYZE -> SEARCH -> ANSWER` and `ANALYZE -> ANSWER`.
+live run progress on stderr without polluting JSON stdout, loop guard behavior,
+state delta rendering, citation validation and repair, model retry accounting,
+search timeout classification, stale task diagnostics, and dynamic runtime paths
+including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
+`SEARCH -> ANSWER(validation error) -> ANSWER`.
 
 Live verification should be recorded separately:
 
@@ -185,3 +227,10 @@ A successful small `doctor --probe` confirms only the minimal protocol path. It
 does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
+
+The pytest live smoke files are also opt-in:
+
+```bash
+HEURIVA_RUN_LIVE_LLM_TESTS=1 .venv/bin/pytest tests/live/test_live_llm.py
+HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
+```

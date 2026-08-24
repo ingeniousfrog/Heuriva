@@ -57,6 +57,7 @@ def test_sqlite_store_persists_and_reads_trajectory(tmp_path: Path) -> None:
     assert loaded["trajectory"]["final_answer"] == "Final"
     assert len(loaded["steps"]) == 1
     assert loaded["steps"][0]["decision"]["operator"] == "ANSWER"
+    assert "state_delta" in loaded["steps"][0]
 
 
 def test_sqlite_commit_step_rolls_back_on_failure(tmp_path: Path) -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,11 +16,27 @@ class ModelChatResult:
 
 
 class ModelClientError(Exception):
-    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        attempt_count: int = 1,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = retryable
+        self.attempt_count = attempt_count
+
+    def with_attempt_count(self, attempt_count: int) -> ModelClientError:
+        return ModelClientError(
+            self.code,
+            self.message,
+            retryable=self.retryable,
+            attempt_count=attempt_count,
+        )
 
 
 class ModelClient:
@@ -30,11 +48,17 @@ class ModelClient:
         api_key: str | None = None,
         connect_timeout_seconds: float = 5.0,
         read_timeout_seconds: float = 180.0,
+        max_retries: int = 0,
+        retry_backoff_seconds: float = 0.1,
+        sleep: Callable[[float], None] = time.sleep,
         http_client: httpx.Client | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
+        self.max_retries = max(0, max_retries)
+        self.retry_backoff_seconds = max(0.0, retry_backoff_seconds)
+        self._sleep = sleep
         self._own_client = http_client is None
         timeout = httpx.Timeout(
             timeout=read_timeout_seconds,
@@ -43,7 +67,40 @@ class ModelClient:
         )
         self.http_client = http_client or httpx.Client(timeout=timeout)
 
-    def chat(self, messages: list[dict[str, str]]) -> ModelChatResult:
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> ModelChatResult:
+        for attempt in range(1, self.max_retries + 2):
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                raise ModelClientError(
+                    "timeout",
+                    "task deadline reached before model request",
+                    retryable=True,
+                    attempt_count=attempt,
+                )
+            try:
+                result = self._chat_once(messages)
+            except ModelClientError as exc:
+                error = exc.with_attempt_count(attempt)
+                if not error.retryable or attempt > self.max_retries:
+                    raise error from exc
+                self._sleep(_retry_delay(self.retry_backoff_seconds, attempt))
+                continue
+            return ModelChatResult(
+                content=result.content,
+                metadata={**result.metadata, "attempt_count": attempt},
+            )
+        raise ModelClientError(
+            "request_error",
+            "model request retries exhausted",
+            retryable=True,
+            attempt_count=self.max_retries + 1,
+        )
+
+    def _chat_once(self, messages: list[dict[str, str]]) -> ModelChatResult:
         url = f"{self.base_url}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -115,3 +172,7 @@ class ModelClient:
                 "provider_error", f"model endpoint HTTP {response.status_code}", retryable=True
             )
         return ModelClientError("http_error", f"model endpoint HTTP {response.status_code}")
+
+
+def _retry_delay(base_seconds: float, attempt: int) -> float:
+    return float(min(base_seconds * (2 ** max(0, attempt - 1)), 2.0))

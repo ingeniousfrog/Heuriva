@@ -1,0 +1,50 @@
+cases:
+  - id: direct_answer
+    evidence_level: synthetic
+    task: Explain what Heuriva does in one paragraph.
+    invariants:
+      - status is done
+      - final answer is non-empty
+      - search is optional
+  - id: search_grounded_answer
+    evidence_level: fake_integration
+    task: Summarize a claim that requires external evidence.
+    invariants:
+      - search step stores at least one evidence URL
+      - final answer cites a saved evidence label
+  - id: repeated_analysis_guard
+    evidence_level: synthetic
+    task: Force repeated analysis with no material state delta.
+    invariants:
+      - loop_guard_applied event is stored
+      - runtime exposes ANSWER before max_steps is exhausted
+  - id: search_disabled
+    evidence_level: synthetic
+    task: Answer with search disabled.
+    invariants:
+      - SEARCH is never available
+      - citation is not required without evidence
+  - id: missing_citation_repair
+    evidence_level: fake_integration
+    task: Search first, then answer once without citations and repair.
+    invariants:
+      - first ANSWER stores answer_validation_error
+      - second ANSWER may finish only with a saved evidence label
+  - id: slow_endpoint_retry
+    evidence_level: fake_integration
+    task: Simulate retryable model failures before success.
+    invariants:
+      - attempt_count is recorded
+      - final error classification is stable when retries are exhausted
+  - id: live_llm_protocol
+    evidence_level: live
+    task: Optional local model protocol smoke.
+    invariants:
+      - skipped unless HEURIVA_RUN_LIVE_LLM_TESTS=1
+      - does not assert fixed wording
+  - id: live_search_protocol
+    evidence_level: live
+    task: Optional real search smoke.
+    invariants:
+      - skipped unless HEURIVA_RUN_LIVE_SEARCH_TESTS=1
+      - stores URL-bearing search evidence

@@ -4,7 +4,6 @@ import json
 import sys
 from collections.abc import Callable
 from functools import partial
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -14,6 +13,7 @@ from heuriva.clients.search import SearchClient
 from heuriva.config import api_key_for, load_config, setup_config
 from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
+from heuriva.diagnostics import collect_diagnostics
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
 from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
@@ -79,11 +79,8 @@ def doctor(
     except Exception as exc:
         typer.echo(f"Configuration error: {exc}", err=True)
         raise typer.Exit(2) from exc
-    db_status = SQLiteStore.schema_status(config.storage.sqlite_path)
-    typer.echo(f"Config: {Path.home() / '.heuriva' / 'config.yaml'}", err=True)
-    typer.echo(f"Endpoint: {config.llm.base_url}", err=True)
-    typer.echo(f"Model: {config.llm.model}", err=True)
-    typer.echo(f"SQLite schema: {db_status}", err=True)
+    for line in collect_diagnostics(config).lines():
+        typer.echo(line, err=True)
     read_timeout_seconds = probe_timeout or min(
         config.llm.read_timeout_seconds, DOCTOR_READ_TIMEOUT_SECONDS
     )
@@ -97,6 +94,7 @@ def doctor(
             config.llm.connect_timeout_seconds, DOCTOR_CONNECT_TIMEOUT_SECONDS
         ),
         read_timeout_seconds=read_timeout_seconds,
+        max_retries=config.llm.max_retries,
     )
     try:
         ok, message = model_client.models_probe()
@@ -215,6 +213,7 @@ def _build_engine() -> RuntimeEngine:
         api_key=api_key_for(config),
         connect_timeout_seconds=config.llm.connect_timeout_seconds,
         read_timeout_seconds=config.llm.read_timeout_seconds,
+        max_retries=config.llm.max_retries,
     )
     controller = LLMController(
         model_client=model_client,

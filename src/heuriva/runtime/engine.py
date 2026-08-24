@@ -17,6 +17,8 @@ from heuriva.core.state import CognitiveState, StateStatus
 from heuriva.core.state_patch import OperationResult
 from heuriva.redaction import redact_text
 from heuriva.runtime.executor_router import ExecutorRouter
+from heuriva.runtime.progress_policy import ProgressPolicyResult, evaluate_progress_policy
+from heuriva.runtime.state_delta import StateDelta, calculate_state_delta
 from heuriva.runtime.state_updater import StateUpdater
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_step
@@ -31,6 +33,8 @@ class RuntimeStep:
     decision: Decision
     observation: Observation
     state: CognitiveState
+    state_before: CognitiveState | None = None
+    state_delta: StateDelta | None = None
 
 
 @dataclass(frozen=True)
@@ -121,7 +125,28 @@ class RuntimeEngine:
                         started=started,
                     )
                     break
-                available = self._available_for_state(state)
+                policy = self._progress_policy_for_state(state, tuple(steps))
+                available = policy.available_operators
+                if policy.guard_action is not None:
+                    event = RuntimeEvent(
+                        task_id=state.task_id,
+                        step_index=state.step_index,
+                        event_type="loop_guard_applied",
+                        level=EventLevel.WARNING,
+                        payload=policy.event_payload(),
+                    )
+                    self.store.log_event(event)
+                    self._notify_progress(
+                        progress,
+                        task_id=task_id,
+                        step_index=state.step_index,
+                        stage="loop_guard_applied",
+                        message=(
+                            f"{policy.guard_reason}; next operators: "
+                            f"{', '.join(operator.value for operator in available)}"
+                        ),
+                        started=started,
+                    )
                 available_names = ", ".join(operator.value for operator in available)
                 self._notify_progress(
                     progress,
@@ -136,7 +161,7 @@ class RuntimeEngine:
                         state=state,
                         available_operators=available,
                         runtime_limits=self.config.runtime.model_dump(mode="json"),
-                        policy_hints=(),
+                        policy_hints=policy.policy_hints,
                     )
                     for event in events:
                         self.store.log_event(event)
@@ -205,6 +230,21 @@ class RuntimeEngine:
                     result=result,
                 )
                 state_after = self.updater.apply(state, result.patch, history_ref=observation.id)
+                state_delta = calculate_state_delta(state, state_after)
+                if result.error is not None and result.error.code == "answer_validation_error":
+                    self.store.log_event(
+                        RuntimeEvent(
+                            task_id=state.task_id,
+                            step_index=state.step_index,
+                            event_type="answer_validation_error",
+                            level=EventLevel.WARNING,
+                            payload={
+                                "code": result.error.code,
+                                "message": result.error.message,
+                                "retryable": result.error.retryable,
+                            },
+                        )
+                    )
                 if result.error is not None:
                     consecutive_failures += 1
                     observation_status_terminal = not result.error.retryable
@@ -224,6 +264,7 @@ class RuntimeEngine:
                 ):
                     final_answer = result.final_answer.strip()
                     state_after = state_after._replace(status=StateStatus.DONE)
+                    state_delta = calculate_state_delta(state, state_after)
                     status = StateStatus.DONE
                     termination_reason = "answer"
                 self.store.commit_step(
@@ -236,10 +277,17 @@ class RuntimeEngine:
                     decision=decision,
                     observation_content=observation.content,
                     trace=trace,
+                    state_delta=state_delta,
                 )
                 trace_lines.append(line)
                 steps.append(
-                    RuntimeStep(decision=decision, observation=observation, state=state_after)
+                    RuntimeStep(
+                        decision=decision,
+                        observation=observation,
+                        state=state_after,
+                        state_before=state,
+                        state_delta=state_delta,
+                    )
                 )
                 next_action = "continue planning"
                 if status in {StateStatus.DONE, StateStatus.FAILED}:
@@ -308,12 +356,18 @@ class RuntimeEngine:
             )
             raise RuntimeInterrupted(task_id) from None
 
-    def _available_for_state(self, state: CognitiveState) -> tuple[Operator, ...]:
-        available = self.router.available_operators()
-        remaining = self.config.runtime.max_steps - state.step_index
-        if remaining <= 1:
-            return (Operator.ANSWER,)
-        return available
+    def _progress_policy_for_state(
+        self, state: CognitiveState, steps: tuple[RuntimeStep, ...]
+    ) -> ProgressPolicyResult:
+        return evaluate_progress_policy(
+            state=state,
+            committed_steps=steps,
+            base_available=self.router.available_operators(),
+            max_steps=self.config.runtime.max_steps,
+            max_same_operator_streak=self.config.runtime.max_same_operator_streak,
+            max_no_progress_steps=self.config.runtime.max_no_progress_steps,
+            answer_reserve_steps=self.config.runtime.answer_reserve_steps,
+        )
 
     @staticmethod
     def _notify_progress(

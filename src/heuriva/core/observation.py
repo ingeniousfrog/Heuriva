@@ -42,6 +42,7 @@ class ErrorInfo(BaseModel):
     code: str
     message: str
     retryable: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("code", "message")
     @classmethod

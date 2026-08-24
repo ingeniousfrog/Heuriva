@@ -51,6 +51,9 @@ class RuntimeConfig(BaseModel):
     max_task_seconds: int = Field(default=600, ge=1, le=7200)
     controller_repair_attempts: int = Field(default=1, ge=0, le=3)
     max_consecutive_failures: int = Field(default=3, ge=1, le=20)
+    max_same_operator_streak: int = Field(default=3, ge=1, le=20)
+    max_no_progress_steps: int = Field(default=2, ge=1, le=20)
+    answer_reserve_steps: int = Field(default=2, ge=1, le=20)
 
 
 class StorageConfig(BaseModel):
@@ -136,6 +139,9 @@ def default_config_text() -> str:
             "  max_task_seconds: 600",
             "  controller_repair_attempts: 1",
             "  max_consecutive_failures: 3",
+            "  max_same_operator_streak: 3",
+            "  max_no_progress_steps: 2",
+            "  answer_reserve_steps: 2",
             "",
             "storage:",
             "  sqlite_path: ~/.heuriva/memory.db",

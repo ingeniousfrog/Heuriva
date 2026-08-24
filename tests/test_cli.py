@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +10,10 @@ import pytest
 from typer.testing import CliRunner
 
 from heuriva.cli import app
+from heuriva.core.common import utc_now
+from heuriva.core.state import CognitiveState
 from heuriva.runtime.engine import RuntimeInterrupted, RuntimeProgress, RuntimeResult
+from heuriva.storage.sqlite import SQLiteStore
 
 
 def test_cli_help() -> None:
@@ -132,3 +137,30 @@ def test_cli_show_missing_task_returns_not_found(
 
     assert result.exit_code == 4
     assert "not found" in result.stderr
+
+
+def test_cli_doctor_reports_effective_runtime_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(app, ["setup"])
+    db_path = tmp_path / ".heuriva" / "memory.db"
+    store = SQLiteStore(db_path)
+    state = CognitiveState.new(task_id="task-stale", goal="unfinished")
+    store.create_task_with_trajectory(state, config_snapshot={})
+    stale_time = (utc_now() - timedelta(seconds=1200)).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE tasks SET updated_at = ? WHERE id = ?",
+            (stale_time, state.task_id),
+        )
+        conn.commit()
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "LLM timeouts: connect=5s read=180s retries=1" in result.stderr
+    assert "Search timeout: 15s" in result.stderr
+    assert "Stale running tasks: 1" in result.stderr
+    assert "Oldest stale task: task-stale" in result.stderr

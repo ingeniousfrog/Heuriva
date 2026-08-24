@@ -48,9 +48,21 @@ class SearchClient:
                 code="empty_query", message="search query was empty", retryable=False
             )
         try:
-            provider = self.provider or self._default_provider()
+            provider = self.provider or self._default_provider(self.timeout_seconds)
             raw_results = provider.text(query, max_results=self.max_results)
+        except TimeoutError:
+            return (), ErrorInfo(
+                code="search_timeout",
+                message=f"search exceeded {self.timeout_seconds:g}s timeout",
+                retryable=True,
+            )
         except Exception as exc:  # ddgs surfaces several provider-specific exception types.
+            if "timeout" in exc.__class__.__name__.lower():
+                return (), ErrorInfo(
+                    code="search_timeout",
+                    message=f"search exceeded {self.timeout_seconds:g}s timeout",
+                    retryable=True,
+                )
             return (), ErrorInfo(
                 code="search_error", message=exc.__class__.__name__, retryable=True
             )
@@ -68,7 +80,7 @@ class SearchClient:
         return tuple(results), None
 
     @staticmethod
-    def _default_provider() -> SearchProvider:
+    def _default_provider(timeout_seconds: float) -> SearchProvider:
         from ddgs import DDGS
 
-        return DDGS()
+        return DDGS(timeout=max(1, int(timeout_seconds)))
