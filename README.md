@@ -2,6 +2,8 @@
 
 **Last Updated:** 2026-08-24
 
+[中文文档](README-CN.md)
+
 Heuriva is a Python CLI cognitive runtime for language models. v0.1 focuses on
 one local experiment: can a frozen-weight model produce a visible,
 serializable, inspectable task-solving trajectory when the runtime keeps
