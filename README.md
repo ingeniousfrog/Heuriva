@@ -64,6 +64,7 @@ Run diagnostics:
 ```bash
 heuriva doctor
 heuriva doctor --probe
+heuriva doctor --probe --probe-timeout 30
 ```
 
 Run a task:
@@ -165,9 +166,11 @@ and dynamic runtime paths including both `ANALYZE -> SEARCH -> ANSWER` and
 Live verification should be recorded separately:
 
 ```bash
-HEURIVA_RUN_LIVE_LLM_TESTS=1 heuriva doctor --probe
+HEURIVA_RUN_LIVE_LLM_TESTS=1 heuriva doctor --probe --probe-timeout 30
 HEURIVA_RUN_LIVE_SEARCH_TESTS=1 heuriva run --trace "..."
 ```
 
 A successful small `doctor --probe` confirms only the minimal protocol path. It
-does not prove a full multi-step product run or search quality.
+does not prove a full multi-step product run or search quality. Use
+`--probe-timeout` when a local or Cursor-compatible model needs more than the
+default quick probe timeout to return its first token.

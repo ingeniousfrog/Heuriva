@@ -19,6 +19,9 @@ from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_saved_trajectory
 
 app = typer.Typer(add_completion=False, invoke_without_command=True)
+DOCTOR_CONNECT_TIMEOUT_SECONDS = 1.0
+DOCTOR_READ_TIMEOUT_SECONDS = 2.0
+MAX_DOCTOR_PROBE_TIMEOUT_SECONDS = 600.0
 
 
 @app.callback(invoke_without_command=True)
@@ -59,6 +62,15 @@ def setup(
 @app.command()
 def doctor(
     probe: Annotated[bool, typer.Option("--probe", help="Send a minimal chat completion.")] = False,
+    probe_timeout: Annotated[
+        float | None,
+        typer.Option(
+            "--probe-timeout",
+            min=0.1,
+            max=MAX_DOCTOR_PROBE_TIMEOUT_SECONDS,
+            help="Override the doctor probe read timeout in seconds.",
+        ),
+    ] = None,
 ) -> None:
     try:
         config = load_config()
@@ -70,12 +82,19 @@ def doctor(
     typer.echo(f"Endpoint: {config.llm.base_url}", err=True)
     typer.echo(f"Model: {config.llm.model}", err=True)
     typer.echo(f"SQLite schema: {db_status}", err=True)
+    read_timeout_seconds = probe_timeout or min(
+        config.llm.read_timeout_seconds, DOCTOR_READ_TIMEOUT_SECONDS
+    )
+    if probe or probe_timeout is not None:
+        typer.echo(f"Probe timeout: {read_timeout_seconds:g}s", err=True)
     model_client = ModelClient(
         base_url=config.llm.base_url,
         model=config.llm.model,
         api_key=api_key_for(config),
-        connect_timeout_seconds=min(config.llm.connect_timeout_seconds, 1.0),
-        read_timeout_seconds=min(config.llm.read_timeout_seconds, 2.0),
+        connect_timeout_seconds=min(
+            config.llm.connect_timeout_seconds, DOCTOR_CONNECT_TIMEOUT_SECONDS
+        ),
+        read_timeout_seconds=read_timeout_seconds,
     )
     try:
         ok, message = model_client.models_probe()

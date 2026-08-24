@@ -1,5 +1,6 @@
 # Local planning docs — do not publish
 plan.md
+docs/acceptance/live-acceptance-checklist.md
 
 # Local development artifacts
 .venv/

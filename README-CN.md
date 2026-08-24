@@ -118,6 +118,7 @@ heuriva setup
 ```bash
 heuriva doctor
 heuriva doctor --probe
+heuriva doctor --probe --probe-timeout 30
 ```
 
 运行一个任务：
@@ -215,14 +216,7 @@ ANSWER  -> llm
 
 覆盖率当前为 80%。这证明 v0.1 机制在 fake model/search 下可运行，但不证明真实模型质量、真实搜索质量或 Cursor endpoint 稳定性。
 
-真实验证建议单独记录：
-
-```bash
-HEURIVA_RUN_LIVE_LLM_TESTS=1 heuriva doctor --probe
-HEURIVA_RUN_LIVE_SEARCH_TESTS=1 heuriva run --trace "..."
-```
-
-`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。
+真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 
 ## 接下来更适合做什么
 
@@ -230,7 +224,7 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 heuriva run --trace "..."
 
 优先级最高的是：
 
-1. 跑一次真实 Cursor endpoint 的 `doctor --probe`，再跑一次完整 `heuriva run --trace`，确认能落库至少两个 step，并且 `heuriva show --trace <task_id>` 能重读。
+1. 按本地验收清单跑一次真实 Cursor endpoint、完整 `heuriva run --json` 和 `heuriva show --trace <task_id>`，确认能落库至少两个 step。
 2. 把 live 验证结果记录到文档里：endpoint、日期、命令、退出码、task_id、是否有真实搜索 URL。
 3. 补齐计划里还没有完全产品化的诊断项，尤其是 stale running task 统计、`max_retries` 的实际使用、search timeout 的真实传递。
 4. 增加 optional live tests，让 `HEURIVA_RUN_LIVE_LLM_TESTS=1` 和 `HEURIVA_RUN_LIVE_SEARCH_TESTS=1` 真正触发可跳过的 smoke tests。
