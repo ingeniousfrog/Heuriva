@@ -20,6 +20,11 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 
 ## 当前状态
 
+发布定性：v0.3 已在 2026-08-25 标记为 accepted。自动化验证、本地
+package build，以及本机 live acceptance 记录共同支撑 v0.3 范围；live
+checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
+当前架构、后续缺口和 v0.4 建议见 [docs/roadmap-v0.4.md](docs/roadmap-v0.4.md)。
+
 这个仓库当前已经实现：
 
 - Python package 与 `heuriva` CLI 入口

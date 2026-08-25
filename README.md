@@ -16,6 +16,12 @@ with explicit provenance.
 
 ## Current Status
 
+Release status: v0.3 is accepted as of 2026-08-25. Automated verification,
+local package build, and local live-acceptance records support the v0.3 scope.
+The live checklist remains local-only and ignored by Git because it contains
+machine-specific task IDs. See [docs/roadmap-v0.4.md](docs/roadmap-v0.4.md) for
+the current architecture summary, remaining gaps, and recommended v0.4 scope.
+
 Implemented in this repository:
 
 - Python package with `heuriva` CLI entry point
