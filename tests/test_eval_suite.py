@@ -21,7 +21,7 @@ def test_v04_corpus_schema_rejects_unknown_fields() -> None:
     payload = yaml.safe_load(FIXTURE_CORPUS.read_text(encoding="utf-8"))
     corpus = EvalCorpus.model_validate(payload)
 
-    assert corpus.version == "0.4"
+    assert corpus.version == "0.5"
     assert {case.evidence_level for case in corpus.cases} == {
         EvidenceLevel.SYNTHETIC,
         EvidenceLevel.FAKE_INTEGRATION,
@@ -55,9 +55,13 @@ def test_eval_suite_runs_deterministic_and_fake_cases_offline(tmp_path: Path) ->
     assert by_id["completion_enforce_block"].status == "pass"
     assert by_id["completion_enforce_repair"].status == "pass"
     assert by_id["cited_but_off_task"].status == "pass"
+    assert by_id["judge_manual_review_needed"].status == "pass"
+    assert by_id["judge_manual_review_needed"].disagreement_bucket == "manual_review_needed"
+    assert by_id["judge_manual_review_needed"].judge_verdict == "insufficient_evidence"
     assert by_id["stored_live_relevance_readback"].status == "missing"
     assert by_id["fresh_live_opt_in"].status == "skipped"
     assert report.totals_by_status.get("fail", 0) == 0
+    assert report.totals_by_status.get("pass", 0) == 7
     assert report.promotion is not None
     assert report.promotion.recommend_enforce is False
     assert report.disclaimer
@@ -147,11 +151,13 @@ def test_cli_eval_suite_json_is_single_object(
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["corpus_version"] == "0.4"
-    assert payload["totals_by_status"]["pass"] >= 6
+    assert payload["corpus_version"] == "0.5"
+    assert payload["totals_by_status"]["pass"] >= 7
     assert payload["promotion"]["recommend_enforce"] is False
     assert "product proof" in payload["disclaimer"]
     assert payload["include_fresh_live"] is False
+    by_id = {case["case_id"]: case for case in payload["case_results"]}
+    assert by_id["judge_manual_review_needed"]["disagreement_bucket"] == "manual_review_needed"
 
 
 def test_cli_eval_suite_honors_fresh_live_env(
@@ -177,6 +183,7 @@ def test_cli_eval_suite_honors_fresh_live_env(
 
 def test_default_packaged_corpus_loads() -> None:
     corpus, path = load_eval_corpus()
-    assert corpus.version == "0.4"
+    assert corpus.version == "0.5"
     assert path.name == "v04_eval_corpus.yaml"
     assert any(case.harness == "forbidden_search_guard" for case in corpus.cases)
+    assert any(case.harness == "judge_manual_review_needed" for case in corpus.cases)

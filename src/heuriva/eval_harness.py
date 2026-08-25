@@ -23,6 +23,8 @@ class HarnessOutcome:
     trajectory: dict[str, Any]
     search_provider_calls: int = 0
     notes: str = ""
+    disagreement_bucket: str | None = None
+    judge_verdict: str | None = None
 
 
 HarnessFn = Callable[[Path], HarnessOutcome]
@@ -276,6 +278,100 @@ def harness_cited_but_off_task(workdir: Path) -> HarnessOutcome:
     return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
 
 
+def harness_judge_manual_review_needed(workdir: Path) -> HarnessOutcome:
+    """Force a fake judge to emit manual_review_needed without a live model."""
+    import json
+
+    from heuriva.clients.model import ModelChatResult
+    from heuriva.core.decision import AnswerParams
+    from heuriva.core.observation import Observation, ObservationKind, ObservationStatus
+    from heuriva.eval_judge import FreshJudge
+    from heuriva.evaluation import evaluate_with_judge
+
+    store = SQLiteStore(workdir / "memory.db")
+    state = CognitiveState.new(task_id="task-judge-manual", goal="Ambiguous local summary")
+    store.create_task_with_trajectory(state, config_snapshot={"model": "fake"})
+    decision = bind_decision(
+        DecisionDraft(
+            operator=Operator.ANSWER,
+            objective="answer",
+            reason="done",
+            success_criteria=("final",),
+            params=AnswerParams(),
+            confidence=0.5,
+        ),
+        state,
+    )
+    observation = Observation(
+        task_id=state.task_id,
+        decision_id=decision.id,
+        kind=ObservationKind.ANSWER,
+        status=ObservationStatus.SUCCESS,
+        content="Maybe yes, maybe no.",
+        executor_kind="llm",
+        metadata={
+            "citation_validation": "passed",
+            "completion_assessment": {
+                "verdict": "pass",
+                "failed_criteria": [],
+                "assessment_origin": "deterministic",
+            },
+        },
+    )
+    next_state = state.advance(status="done")
+    store.commit_step(
+        state_before=state,
+        decision=decision,
+        observation=observation,
+        state_after=next_state,
+    )
+    store.finalize_task(
+        task_id=state.task_id,
+        final_state=next_state,
+        status="done",
+        termination_reason="answer",
+        final_answer="Maybe yes, maybe no.",
+    )
+    data = store.get_trajectory(state.task_id)
+
+    class ScriptedJudgeModel:
+        def chat(self, messages: list[dict[str, str]]) -> ModelChatResult:
+            del messages
+            return ModelChatResult(
+                content=json.dumps(
+                    {
+                        "verdict": "insufficient_evidence",
+                        "reason": "answer is ambiguous and needs human review",
+                        "failed_criteria": [],
+                        "manual_review_needed": True,
+                    }
+                ),
+                metadata={"attempt_count": 1, "model": "fake-judge"},
+            )
+
+    judged = evaluate_with_judge(
+        data,
+        judge=FreshJudge(
+            model_client=ScriptedJudgeModel(),
+            model_name="fake-judge",
+            base_url="http://localhost:8765/v1",
+            repair_attempts=0,
+        ),
+        store=store,
+        persist=True,
+        case_id="judge_manual_review_needed",
+    )
+    return HarnessOutcome(
+        trajectory=store.get_trajectory(state.task_id),
+        notes=(
+            "fake judge forced manual_review_needed; disagreement is a separate "
+            "state, not fail; not product proof"
+        ),
+        disagreement_bucket=judged.disagreement.bucket.value,
+        judge_verdict=judged.judge.verdict.value,
+    )
+
+
 HARNESSES: dict[str, HarnessFn] = {
     "forbidden_search_guard": harness_forbidden_search_guard,
     "duplicate_query_guard": harness_duplicate_query_guard,
@@ -283,6 +379,7 @@ HARNESSES: dict[str, HarnessFn] = {
     "completion_enforce_block": harness_completion_enforce_block,
     "completion_enforce_repair": harness_completion_enforce_repair,
     "cited_but_off_task": harness_cited_but_off_task,
+    "judge_manual_review_needed": harness_judge_manual_review_needed,
 }
 
 

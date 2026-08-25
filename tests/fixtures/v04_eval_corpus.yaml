@@ -1,4 +1,4 @@
-version: "0.4"
+version: "0.5"
 cases:
   - id: forbidden_search_guard
     kind: known_good
@@ -71,6 +71,18 @@ cases:
       citation_validation: passed
       completion_verdict: fail
 
+  - id: judge_manual_review_needed
+    kind: known_good
+    evidence_level: fake_integration
+    prompt: "Forced fake judge returns manual_review_needed"
+    harness: judge_manual_review_needed
+    expected_quality_signal: "manual_review_needed is a separate disagreement state, not an automatic fail"
+    expected:
+      status: done
+      disagreement_bucket: manual_review_needed
+      judge_verdict: insufficient_evidence
+    notes: "Fake judge harness; not live model behavior and not product proof."
+
   - id: stored_live_relevance_readback
     kind: known_good
     evidence_level: stored_live
@@ -84,4 +96,4 @@ cases:
     evidence_level: fresh_live
     prompt: "Optional live evidence collection for quality signals"
     expected_quality_signal: "fresh live evidence is opt-in and never implied by default suite success"
-    notes: "Requires --include-fresh-live or HEURIVA_EVAL_SUITE_FRESH_LIVE=1; v0.4 still does not auto-call live judges."
+    notes: "Requires --include-fresh-live or HEURIVA_EVAL_SUITE_FRESH_LIVE=1; use heuriva eval --judge for opt-in fresh judging."

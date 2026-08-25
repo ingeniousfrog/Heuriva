@@ -112,6 +112,8 @@ class EvalCaseResult:
     search_provider_calls: int | None = None
     notes: str = ""
     is_product_proof: bool = False
+    disagreement_bucket: str | None = None
+    judge_verdict: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -722,6 +724,12 @@ def render_suite_report(report: EvalSuiteReport) -> str:
             lines.append(f"    mismatches: {', '.join(result.mismatches)}")
         if result.notes:
             lines.append(f"    notes: {result.notes}")
+        if result.disagreement_bucket is not None or result.judge_verdict is not None:
+            lines.append(
+                "    judge: "
+                f"verdict={result.judge_verdict}, "
+                f"disagreement={result.disagreement_bucket}"
+            )
         if result.trajectory_report is not None:
             traj = result.trajectory_report
             lines.append(
@@ -860,11 +868,28 @@ def _score_harness_case(case: EvalCorpusCase, outcome: HarnessOutcome) -> EvalCa
         outcome.trajectory,
         evidence_level=case.evidence_level.value,
     )
-    mismatches = _compare_expected(
-        case.expected,
-        report,
-        search_provider_calls=outcome.search_provider_calls,
+    mismatches = list(
+        _compare_expected(
+            case.expected,
+            report,
+            search_provider_calls=outcome.search_provider_calls,
+        )
     )
+    if (
+        case.expected.disagreement_bucket is not None
+        and outcome.disagreement_bucket != case.expected.disagreement_bucket
+    ):
+        mismatches.append(
+            "disagreement_bucket expected="
+            f"{case.expected.disagreement_bucket} actual={outcome.disagreement_bucket}"
+        )
+    if (
+        case.expected.judge_verdict is not None
+        and outcome.judge_verdict != case.expected.judge_verdict
+    ):
+        mismatches.append(
+            f"judge_verdict expected={case.expected.judge_verdict} actual={outcome.judge_verdict}"
+        )
     status = CaseResultStatus.PASS if not mismatches else CaseResultStatus.FAIL
     return EvalCaseResult(
         case_id=case.id,
@@ -872,12 +897,14 @@ def _score_harness_case(case: EvalCorpusCase, outcome: HarnessOutcome) -> EvalCa
         evidence_level=case.evidence_level.value,
         status=status.value,
         expected_quality_signal=case.expected_quality_signal,
-        mismatches=mismatches,
+        mismatches=tuple(mismatches),
         task_id=report.task_id,
         trajectory_report=report,
         search_provider_calls=outcome.search_provider_calls,
         notes=outcome.notes or "synthetic/fake harness result; not product proof",
         is_product_proof=False,
+        disagreement_bucket=outcome.disagreement_bucket,
+        judge_verdict=outcome.judge_verdict,
     )
 
 

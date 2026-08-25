@@ -120,6 +120,8 @@ class ExpectedCaseSignals(BaseModel):
     min_rejected_candidates: int | None = Field(default=None, ge=0)
     citation_validation: str | None = None
     completion_verdict: str | None = None
+    disagreement_bucket: str | None = None
+    judge_verdict: str | None = None
 
     @field_validator("search_guard_reasons")
     @classmethod
