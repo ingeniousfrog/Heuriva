@@ -26,6 +26,7 @@ def test_cli_help() -> None:
 
     assert result.exit_code == 0
     assert "run" in result.stdout
+    assert "serve" in result.stdout
 
 
 def test_cli_version() -> None:

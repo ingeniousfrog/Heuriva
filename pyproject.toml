@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heuriva"
-version = "0.7.0"
+version = "0.8.0"
 description = "An adaptive cognitive runtime for language models."
 readme = "README.md"
 license = "MIT"

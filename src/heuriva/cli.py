@@ -4,6 +4,7 @@ import json
 import sys
 from collections.abc import Callable
 from functools import partial
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -29,11 +30,15 @@ from heuriva.executors.search import SearchExecutor
 from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_saved_trajectory
+from heuriva.web.queries import TrajectoryBrowser
+from heuriva.web.server import is_loopback_host, serve_browser
 
 app = typer.Typer(add_completion=False, invoke_without_command=True)
 DOCTOR_CONNECT_TIMEOUT_SECONDS = 1.0
 DOCTOR_READ_TIMEOUT_SECONDS = 2.0
 MAX_DOCTOR_PROBE_TIMEOUT_SECONDS = 600.0
+DEFAULT_SERVE_HOST = "127.0.0.1"
+DEFAULT_SERVE_PORT = 8766
 
 
 @app.callback(invoke_without_command=True)
@@ -404,6 +409,76 @@ def eval_suite(
     failed = report.totals_by_status.get("fail", 0)
     if failed:
         raise typer.Exit(1)
+
+
+@app.command()
+def serve(
+    host: Annotated[
+        str,
+        typer.Option(
+            "--host",
+            help="Bind address. Default is localhost-only (127.0.0.1).",
+        ),
+    ] = DEFAULT_SERVE_HOST,
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            min=1,
+            max=65535,
+            help="HTTP port for the local trajectory browser.",
+        ),
+    ] = DEFAULT_SERVE_PORT,
+    db_path: Annotated[
+        str | None,
+        typer.Option(
+            "--db",
+            help="SQLite path to inspect. Defaults to configured storage.",
+        ),
+    ] = None,
+) -> None:
+    """Start a localhost read-only trajectory browser (no model calls, no writes)."""
+    try:
+        sqlite_path = db_path
+        if sqlite_path is None:
+            sqlite_path = str(load_config().storage.sqlite_path)
+        store = SQLiteStore(sqlite_path)
+        browser = TrajectoryBrowser(store)
+    except Exception as exc:
+        typer.echo(f"Could not open trajectory store: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    if not is_loopback_host(host):
+        typer.echo(
+            "WARNING: binding away from localhost exposes your local task database. "
+            "This inspector has no auth and is intended for 127.0.0.1 only.",
+            err=True,
+        )
+
+    try:
+        server = serve_browser(
+            browser=browser,
+            host=host,
+            port=port,
+            db_path=sqlite_path,
+        )
+    except OSError as exc:
+        typer.echo(f"Could not bind {host}:{port}: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    typer.echo(
+        f"Heuriva trajectory browser (read-only) at http://{display_host}:{port}/",
+        err=True,
+    )
+    typer.echo(f"SQLite: {Path(sqlite_path).expanduser()}", err=True)
+    typer.echo("Press Ctrl+C to stop. UI does not call the model or rewrite steps.", err=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("Stopped.", err=True)
+    finally:
+        server.server_close()
 
 
 def _cli_criteria(

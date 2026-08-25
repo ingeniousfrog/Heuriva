@@ -188,6 +188,36 @@ class SQLiteStore:
             )
             conn.commit()
 
+    def list_tasks(self, *, limit: int = 100, offset: int = 0) -> tuple[dict[str, Any], ...]:
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        if offset < 0:
+            raise ValueError("offset must be >= 0")
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                f"{_TASK_SUMMARY_SQL} ORDER BY t.updated_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return tuple(dict(row) for row in rows)
+
+    def get_task_summary(self, task_id: str) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"{_TASK_SUMMARY_SQL} WHERE t.id = ?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        return dict(row)
+
+    def count_trajectory_steps(self, task_id: str) -> int:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM trajectory_steps WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        return int(row["n"]) if row is not None else 0
+
     def get_trajectory(self, task_id: str) -> dict[str, Any]:
         with closing(self._connect()) as conn:
             trajectory = conn.execute(
@@ -534,6 +564,26 @@ def _migrate_schema(conn: sqlite3.Connection, *, from_version: int) -> None:
             "ON eval_runs(task_id, created_at)"
         )
     conn.execute("UPDATE schema_meta SET version = ?", (SCHEMA_VERSION,))
+
+
+_TASK_SUMMARY_SQL = """
+SELECT
+  t.id AS task_id,
+  t.goal,
+  t.status,
+  t.created_at,
+  t.updated_at,
+  t.completed_at,
+  tr.final_answer,
+  tr.termination_reason,
+  (
+    SELECT COUNT(*)
+    FROM trajectory_steps ts
+    WHERE ts.task_id = t.id
+  ) AS step_count
+FROM tasks t
+LEFT JOIN trajectories tr ON tr.task_id = t.id
+"""
 
 
 def _iso_timestamp(value: str) -> float:

@@ -4,30 +4,31 @@
 
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.7 adds a
-shared Narrow Completion Lexicon on top of v0.6 Task Contract Fidelity: table-
-driven CN/EN quality-word expansions for deterministic completion (and aligned
-relevance matching), with offline harness coverage so keyword FN classes do not
-silently regress.
+Heuriva is a Python CLI cognitive runtime for language models. v0.8 adds a
+**local read-only Trajectory Browser** (`heuriva serve`) on top of the v0.7
+quality lexicon and v0.6 Task Contract stack: inspect tasks, contracts,
+citations, completion assessments, and eval_runs in a browser without digging
+through CLI JSON.
 
-v0.7 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. Fresh judge verdicts are
-opt-in model assessments with provenance; they do not overwrite trajectories and
-are not objective proof of answer correctness. Fake and synthetic suite results
-remain regression signals, not product proof.
+v0.8 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. The browser does not call
+the model, rewrite trajectories, or change quality defaults. Fresh judge
+verdicts remain opt-in. Fake and synthetic suite results remain regression
+signals, not product proof.
 
 ## Current Status
 
-Release status: v0.7 implements a shared quality lexicon and a Chinese
-safety/tradeoffs known-good harness. Defaults remain `observe`;
-`recommend_enforce` and `enter_verify_design` stay false unless §54 thresholds
-are separately met. Live checklists remain local-only and ignored by Git because
-they contain machine-specific task IDs.
+Release status: v0.8 ships a localhost-only read-only trajectory inspector.
+Defaults remain `observe`; `recommend_enforce` and `enter_verify_design` stay
+false unless §54 thresholds are separately met. Live checklists remain
+local-only and ignored by Git because they contain machine-specific task IDs.
 
 Implemented in this repository:
 
 - Python package with `heuriva` CLI entry point
 - `heuriva setup`, `heuriva doctor`, `heuriva run`, interactive `heuriva`, and
   `heuriva show`
+- Local read-only `heuriva serve` trajectory browser (list + detail; no model
+  calls from the UI)
 - Read-only `heuriva eval` and `heuriva eval --json` for saved trajectories
 - Opt-in `heuriva eval --judge` with provenance, disagreement buckets, promotion
   advice, and a VERIFY design gate; eval runs persist separately from trajectories
@@ -78,7 +79,7 @@ Implemented in this repository:
   `attempt_count` metadata
 - Search timeout classification, stale running task diagnostics, and opt-in live
   smoke tests
-- Automated fake model/search tests for core v0.1 through v0.7 runtime and eval
+- Automated fake model/search tests for core v0.1 through v0.8 runtime and eval
   paths
 
 Not implemented:
@@ -144,11 +145,13 @@ runtime has created the task, stderr includes the full `task_id` and matching
 `show --trace` command. Model endpoint failures keep a classified cause such as
 `connection_error` or `timeout` in progress and saved runtime events.
 
-Inspect a stored trajectory or run the offline eval suite:
+Inspect a stored trajectory, browse locally, or run the offline eval suite:
 
 ```bash
 heuriva show --trace <task_id>
 heuriva show --json <task_id>
+heuriva serve
+heuriva serve --db ~/.heuriva/memory.db --port 8766
 heuriva eval <task_id>
 heuriva eval --json <task_id>
 heuriva eval --judge <task_id>
@@ -157,6 +160,13 @@ heuriva eval-suite
 heuriva eval-suite --json
 ```
 
+`heuriva serve` starts a **localhost-only read-only** trajectory browser for the
+configured SQLite database (or `--db`). It lists tasks and shows contract,
+citation status, completion assessment (including criterion kind), steps, and
+optional eval_runs / disagreement. The UI does not call the model and does not
+rewrite `trajectory_steps`. Binding away from `127.0.0.1` requires an explicit
+`--host` and prints a warning — this is an inspector, not a remote multi-tenant
+dashboard.
 `heuriva eval` is read-only by default. It summarizes stored task contracts,
 search guards, raw/accepted/rejected evidence counts, citation status,
 completion verdicts, and parse-warning counts without replaying the task or
@@ -311,6 +321,7 @@ Automated checks used for this implementation:
 .venv/bin/heuriva --version
 .venv/bin/heuriva eval --help
 .venv/bin/heuriva eval-suite --help
+.venv/bin/heuriva serve --help
 .venv/bin/heuriva eval-suite --json
 ```
 
@@ -326,12 +337,13 @@ mode, bounded completion repair, common Chinese/English criterion matching,
 structured `exact_answer` / `must_not_include` / legacy string criteria,
 read-only eval output, opt-in `--judge` provenance/disagreement persistence,
 eval corpus schema, offline eval-suite reports, stored-live missing/summary
-behavior, SQLite schema migration to `eval_runs`, and dynamic runtime paths
+behavior, SQLite schema migration to `eval_runs`, the read-only trajectory
+browser list/detail path, and dynamic runtime paths
 including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
 `SEARCH -> ANSWER(validation error) -> ANSWER`.
 
-The current automated suite reports 93 passed and 2 skipped live tests. The
-0.7.0 wheel and sdist build locally.
+The current automated suite reports the default pytest run green with 2 skipped
+live tests. The 0.8.0 wheel and sdist build locally.
 
 
 ```bash
@@ -345,14 +357,13 @@ does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
 
-The pytest live smoke files are opt-in and remain skipped by default. v0.7 live
+The pytest live smoke files are opt-in and remain skipped by default. v0.8 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.
 
-## Planned Next: v0.8
+## Planned Next
 
-v0.7 Narrow Completion Lexicon is implemented. The next planned product version
-is a **local read-only Trajectory Browser** (`heuriva serve`-style) for
-inspecting tasks, citations, contracts, and eval_runs — not VERIFY and not a
-remote dashboard. See local `plan.md` §70–§75 and `docs/roadmap-v0.8.md`.
-Citation validation already exists; VERIFY remains closed until §54 is met.
+v0.8 Local Trajectory Browser is implemented. VERIFY remains closed until §54
+is met; citation validation already exists and is only displayed in the UI.
+Default quality modes stay `observe`. See local `plan.md` §70–§75 and
+`docs/roadmap-v0.8.md`.

@@ -8,7 +8,9 @@ Heuriva 是一个 Python CLI 形态的认知运行时，用来观察一个冻结
 
 v0.7 在 v0.6 Task Contract Fidelity 之上增加 **Narrow Completion Lexicon**：共享、表驱动的中英质量词扩展，用于 deterministic completion（并对齐 relevance 匹配），用离线 harness 锁住关键词 FN 回潮。
 
-v0.7 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
+v0.8 增加 **Local Trajectory Browser**：`heuriva serve` 在本机只读打开 SQLite，用最小 Web 面检视任务列表、合同、citation、completion_assessment（含 kind）和 eval_runs / disagreement。默认不调模型、不写轨迹、不改 quality 默认值。
+
+v0.8 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
 
 Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK，而是证明一条可检查的最小闭环：
 
@@ -21,15 +23,17 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - v0.5 可对 saved trajectory 做显式 opt-in fresh judging，并报告 disagreement。
 - v0.6 可用结构化 TaskContract 声明精确完成合同，并在 ANSWER / assessor 两侧保持一致。
 - v0.7 用共享 lexicon 让中英质量词匹配可回归，且不等于默认 semantic enforce。
+- v0.8 提供本机只读 Trajectory Browser，方便复盘质量信号；**不是**远程 dashboard，也**不是** VERIFY。
 
 ## 当前状态
 
-发布定性：v0.7 实现了共享 quality lexicon，以及中文 safety/tradeoffs known-good harness。默认 quality mode 仍是 `observe`；`recommend_enforce` 与 `enter_verify_design` 仍为 false，除非 §54 门槛被单独满足并记录。本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
+发布定性：v0.8 落地本机只读轨迹浏览器。默认 quality mode 仍是 `observe`；`recommend_enforce` 与 `enter_verify_design` 仍为 false，除非 §54 门槛被单独满足并记录。本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
 
 这个仓库当前已经实现：
 
 - Python package 与 `heuriva` CLI 入口
 - `heuriva setup`、`heuriva doctor`、`heuriva run`、交互式 `heuriva`、`heuriva show`
+- 本机只读 `heuriva serve` 轨迹浏览器（列表 + 详情；UI 不调模型）
 - 只读 `heuriva eval` 和 `heuriva eval --json`
 - 显式 opt-in 的 `heuriva eval --judge`：带 provenance、disagreement bucket、promotion 建议、VERIFY gate；eval run 与 trajectory 分表保存
 - 默认离线的 `heuriva eval-suite` / `heuriva eval-suite --json`
@@ -55,7 +59,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 确定性 task-level completion assessment：支持 `off`/`observe`/`enforce`，限制 repair 次数，并覆盖少量常见中英文质量词等价匹配
 - `llm.max_retries` 控制的模型请求 retry，并记录 `attempt_count`
 - search timeout 分类、stale running task 诊断和 opt-in live smoke tests
-- 基于 fake model/search 的 v0.1 到 v0.7 自动化测试
+- 基于 fake model/search 的 v0.1 到 v0.8 自动化测试（含只读 browser 查询路径）
 
 当前明确没有实现：
 
@@ -107,7 +111,7 @@ flowchart TD
     Decision --> Store
     Observation --> Store
     NextState --> Store
-    Store --> Show["heuriva show / eval"]
+    Store --> Show["heuriva show / eval / serve"]
     EvalSuite --> Corpus["v04_eval_corpus"]
     EvalSuite --> Harness["fake harnesses"]
     EvalSuite --> Store
@@ -170,11 +174,13 @@ heuriva run --criterion 'exact_answer:OK' --criterion-must-not 'SECRET' \
 
 失败任务会以非零退出码结束；只要已创建轨迹，stderr 会给出可恢复的 `heuriva show --trace <task_id>` 命令。Ctrl+C 返回 `130`；runtime 已创建 task 后，stderr 会打印完整 `task_id` 和对应的 `show --trace` 命令。模型端点失败会在进度和已保存 runtime event 中保留分类原因，例如 `connection_error` 或 `timeout`。
 
-查看已落库轨迹，或运行离线 eval suite：
+查看已落库轨迹，启动本机只读浏览器，或运行离线 eval suite：
 
 ```bash
 heuriva show --trace <task_id>
 heuriva show --json <task_id>
+heuriva serve
+heuriva serve --db ~/.heuriva/memory.db --port 8766
 heuriva eval <task_id>
 heuriva eval --json <task_id>
 heuriva eval --judge <task_id>
@@ -182,6 +188,8 @@ heuriva eval --judge --json <task_id>
 heuriva eval-suite
 heuriva eval-suite --json
 ```
+
+`heuriva serve` 启动 **仅本机、只读** 的轨迹浏览器，读取配置的 SQLite（或 `--db`）。可看任务列表与详情中的合同、citation、completion_assessment（含 kind）、steps，以及可选的 eval_runs / disagreement。UI 不调模型、不改写 `trajectory_steps`。绑定非 `127.0.0.1` 需要显式 `--host` 并会警告——这是本地 inspector，不是远程多租户 dashboard。
 
 `heuriva eval` 默认只读，不 replay task，也不会调用模型。它会汇总已保存的 task contract、search guard、raw/accepted/rejected evidence 数量、citation 状态、completion verdict 和 parse warning 计数。
 
@@ -295,16 +303,17 @@ SEARCH decision 需要带 `query`、`evidence_need`、`expected_signal` 和 `sou
 .venv/bin/heuriva --version
 .venv/bin/heuriva eval --help
 .venv/bin/heuriva eval-suite --help
+.venv/bin/heuriva serve --help
 .venv/bin/heuriva eval-suite --json
 ```
 
-自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、bounded completion repair、常见中英文 criterion 匹配、结构化 `exact_answer` / `must_not_include` / legacy 字符串 criterion、只读 eval 输出、eval corpus schema、离线 eval-suite 报告、stored-live missing/summary 行为，以及多条 fake runtime 路径：
+自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、bounded completion repair、常见中英文 criterion 匹配、结构化 `exact_answer` / `must_not_include` / legacy 字符串 criterion、只读 eval 输出、eval corpus schema、离线 eval-suite 报告、stored-live missing/summary 行为、只读 trajectory browser 列表/详情与不写 steps，以及多条 fake runtime 路径：
 
 - `ANALYZE -> SEARCH -> ANSWER`
 - `ANALYZE -> ANSWER`
 - `SEARCH -> ANSWER(validation error) -> ANSWER`
 
-当前自动化结果为 93 passed、2 skipped live tests。package build 生成 `heuriva-0.7.0` sdist 和 wheel。这证明 v0.7 Narrow Completion Lexicon 与既有合同 / judging / VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
+默认 pytest 应保持绿色（含 2 个 skipped live tests）。package build 生成 `heuriva-0.8.0` sdist 和 wheel。这证明 v0.8 Local Trajectory Browser 与既有合同 / lexicon / judging / VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
 
 真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 
@@ -317,7 +326,7 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.7 已落地。下一产品版本规划为 **v0.8 Local Trajectory Browser**（本机只读 Web 检视面，见本地 `plan.md` §70–§75 与 `docs/roadmap-v0.8.md`）：方便看轨迹 / citation / contract / eval_runs，**不是**远程 dashboard，也**不是** VERIFY。
+v0.8 Local Trajectory Browser 已落地。VERIFY 仍受 §54 约束且默认关闭；citation 早已存在，UI 只做展示。
 
 提醒：
 
@@ -326,6 +335,6 @@ v0.7 已落地。下一产品版本规划为 **v0.8 Local Trajectory Browser**�
 
 优先级：
 
-1. 实现 localhost 只读 `serve`/`ui` + 列表/详情。
-2. 验收时确认不写 `trajectory_steps`、默认不调模型。
-3. VERIFY / 默认 enforce 仍按 §54，不绑进 v0.8 必达。
+1. 在 ignored checklist 里完成本机真实 `memory.db` 的 UI 验收。
+2. 继续积累不可合同修复 leak（若目标仍是 VERIFY）；证据不够就不要开闸。
+3. 不要把 UI 浏览当成新的 VERIFY 证据，也不要默认打开 semantic enforce。
