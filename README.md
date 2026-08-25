@@ -4,23 +4,24 @@
 
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.3 keeps the
-small three-operator runtime from v0.1/v0.2 and adds a task-level quality loop:
-stable completion criteria, search intent contracts, pre-search guards,
-accepted-versus-rejected evidence accounting, completion assessment, and a
-read-only `heuriva eval` report for saved trajectories.
+Heuriva is a Python CLI cognitive runtime for language models. v0.4 keeps the
+v0.3 three-operator quality loop and adds a reproducible evaluation layer: a
+versioned known-good/known-bad corpus, `heuriva eval-suite`, aggregate quality
+reports, forced-branch harnesses, and explicit promotion rules for quality
+modes.
 
-v0.3 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. It does not claim that a
+v0.4 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. It does not claim that a
 model assessment proves correctness; quality verdicts are stored runtime signals
-with explicit provenance.
+with explicit provenance. Fake and synthetic suite results are regression
+signals, not product proof.
 
 ## Current Status
 
-Release status: v0.3 is accepted as of 2026-08-25. Automated verification,
-local package build, and local live-acceptance records support the v0.3 scope.
-The live checklist remains local-only and ignored by Git because it contains
-machine-specific task IDs. See [docs/roadmap-v0.4.md](docs/roadmap-v0.4.md) for
-the current architecture summary, remaining gaps, and recommended v0.4 scope.
+Release status: v0.4 implements the evaluation corpus and suite planned after
+v0.3 acceptance. Quality modes stay at `observe` by default; see the local
+promotion notes under `docs/` on a development checkout. Live checklists
+remain local-only and ignored by Git because they contain machine-specific task
+IDs.
 
 Implemented in this repository:
 
@@ -28,17 +29,23 @@ Implemented in this repository:
 - `heuriva setup`, `heuriva doctor`, `heuriva run`, interactive `heuriva`, and
   `heuriva show`
 - Read-only `heuriva eval` and `heuriva eval --json` for saved trajectories
+- Offline `heuriva eval-suite` / `heuriva eval-suite --json` over a versioned
+  corpus of synthetic, fake-integration, stored-live, and fresh-live cases
+- Aggregate suite reports with pass/fail/missing/skipped totals, evidence-level
+  separation, search/citation/completion signal rollups, and promotion stats
+- Forced harness coverage for forbidden-search, duplicate-query, enforce block,
+  bounded repair, and citation-versus-completion separation
 - Version visibility through `heuriva --version` and `heuriva doctor`
 - Local config under `~/.heuriva/`
 - OpenAI-compatible non-streaming `/v1/chat/completions` client
-- v0.1 operators: `ANALYZE`, `SEARCH`, `ANSWER`
+- Operators: `ANALYZE`, `SEARCH`, `ANSWER`
 - LLM controller with structured JSON validation, `success_criteria`
-  normalization, v0.3 SEARCH intent fields, and one repair attempt
+  normalization, SEARCH intent fields, and one repair attempt
 - Deterministic executor router that keeps operator selection separate from
   executor selection
 - LLM and search executors
-- Immutable Pydantic v2 schemas for state, decision, observation, events, and
-  trajectory records, plus immutable task-level `TaskContract`
+- Immutable Pydantic v2 schemas for state, decision, observation, events,
+  trajectory records, task-level `TaskContract`, and eval corpus cases
 - SQLite trajectory store with schema versioning, foreign keys, unique step
   constraints, and atomic step commits
 - Runtime-owned progress policy with same-operator, no-material-progress, and
@@ -51,26 +58,26 @@ Implemented in this repository:
 - State delta rendering for concise trace, `show --trace`, and `show --json`
 - Evidence-aware ANSWER prompt plus deterministic `[S1]` citation validation
   against saved state evidence
-- Deterministic completion assessment for stable task criteria and required evidence, with
-  `off`/`observe`/`enforce` quality modes, bounded repair attempts, and a
-  small deterministic equivalence table for common Chinese/English quality terms
+- Deterministic completion assessment for stable task criteria and required
+  evidence, with `off`/`observe`/`enforce` quality modes, bounded repair
+  attempts, and a small deterministic equivalence table for common
+  Chinese/English quality terms
 - Retryable model HTTP failures controlled by `llm.max_retries`, with
   `attempt_count` metadata
 - Search timeout classification, stale running task diagnostics, and opt-in live
   smoke tests
-- Automated fake model/search tests for core v0.1, v0.2, and v0.3 runtime paths
+- Automated fake model/search tests for core v0.1 through v0.4 runtime and eval
+  paths
 
 Not implemented:
 
-- Learning policies, policy lifecycle, replay, benchmark runner, cross-task
-  evaluation tables, vector database, dashboard, MCP, shell/filesystem/Python executors,
-  multi-agent workflows, URL crawling, daemon mode, task resume, or concurrent
-  queues
-- A separate `VERIFY` operator. v0.3 still uses only `ANALYZE`, `SEARCH`, and
-  `ANSWER`.
-- Fresh model judging in `heuriva eval --judge`; the flag is reserved and the
-  default eval path is read-only.
-- Fresh model relevance/completion judging and semantic enforce promotion gates.
+- Learning policies, policy lifecycle, replay, dashboard, MCP,
+  shell/filesystem/Python executors, multi-agent workflows, URL crawling, daemon
+  mode, task resume, or concurrent queues
+- A separate `VERIFY` operator
+- Fresh model judging in `heuriva eval --judge`; the flag remains reserved
+- Default semantic enforce; promotion rules keep quality modes at `observe`
+  until live corpus evidence justifies a narrower change
 
 Live Cursor-compatible endpoint and real web search smoke tests are opt-in and
 are skipped by the default automated test suite.
@@ -121,19 +128,27 @@ runtime has created the task, stderr includes the full `task_id` and matching
 `show --trace` command. Model endpoint failures keep a classified cause such as
 `connection_error` or `timeout` in progress and saved runtime events.
 
-Inspect a stored trajectory:
+Inspect a stored trajectory or run the offline eval suite:
 
 ```bash
 heuriva show --trace <task_id>
 heuriva show --json <task_id>
 heuriva eval <task_id>
 heuriva eval --json <task_id>
+heuriva eval-suite
+heuriva eval-suite --json
 ```
 
 `heuriva eval` is read-only by default. It summarizes stored task contracts,
 search guards, raw/accepted/rejected evidence counts, citation status,
 completion verdicts, and parse-warning counts without replaying the task or
 calling the model.
+
+`heuriva eval-suite` defaults to offline deterministic/fake harness cases. It
+does not mutate `~/.heuriva/memory.db` for those harnesses. `stored_live` cases
+are summarized read-only when a local `task_id` exists; otherwise they are
+`missing`, not `fail`. `fresh_live` cases require `--include-fresh-live` or
+`HEURIVA_EVAL_SUITE_FRESH_LIVE=1` and remain clearly labeled.
 
 Start the simple REPL:
 
@@ -189,6 +204,7 @@ Supported environment overrides:
 - `HEURIVA_LLM_MODEL`
 - `HEURIVA_API_KEY`
 - `HEURIVA_DB_PATH`
+- `HEURIVA_EVAL_SUITE_FRESH_LIVE`
 
 API keys are read from environment variables and are not written to YAML,
 SQLite, or trace output. The SQLite database is a local plaintext trajectory
@@ -198,9 +214,10 @@ Search is enabled by default. Search queries are sent to the configured
 third-party search provider, and search snippets are treated as untrusted
 external data.
 
-Quality modes accept `off`, `observe`, or `enforce`. `observe` records verdicts
-and metadata; `enforce` can block irrelevant evidence or prevent an answer from
-entering `done` when the task contract is unmet.
+Quality modes accept `off`, `observe`, or `enforce`. Defaults remain `observe`.
+`enforce` is available for local experiments and forced harness coverage, but
+v0.4 does not recommend semantic enforce by default: deterministic/fake suite
+green is necessary but not sufficient without live corpus review.
 
 ## Runtime Shape
 
@@ -242,11 +259,11 @@ an `answer_validation_error` observation instead of `done`, leaving the
 trajectory readable and allowing a later ANSWER attempt within the remaining
 budget.
 
-v0.3 also asks SEARCH decisions for `query`, `evidence_need`,
-`expected_signal`, and `source_scope`. The runtime can block Web search before
-the provider call when the user forbids search, the controller marks the source
-as local/provided, the query repeats, the search budget is exhausted, or recent
-searches produced no accepted evidence.
+SEARCH decisions carry `query`, `evidence_need`, `expected_signal`, and
+`source_scope`. The runtime can block Web search before the provider call when
+the user forbids search, the controller marks the source as local/provided, the
+query repeats, the search budget is exhausted, or recent searches produced no
+accepted evidence.
 
 Search results are stored as raw candidates in observation metadata. Only
 accepted evidence is written into state and can count as material progress.
@@ -267,6 +284,8 @@ Automated checks used for this implementation:
 .venv/bin/python -m hatchling build
 .venv/bin/heuriva --version
 .venv/bin/heuriva eval --help
+.venv/bin/heuriva eval-suite --help
+.venv/bin/heuriva eval-suite --json
 ```
 
 The fake test suite covers schema immutability, config precedence, redaction,
@@ -278,14 +297,14 @@ citation validation and repair, model retry accounting, search timeout
 classification, stale task diagnostics, task contracts, search guards, evidence
 relevance accounting, non-duplicated eval evidence counts, completion enforce
 mode, bounded completion repair, common Chinese/English criterion matching,
-read-only eval output, and dynamic runtime paths including
+read-only eval output, eval corpus schema, offline eval-suite reports,
+stored-live missing/summary behavior, and dynamic runtime paths including
 `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
 `SEARCH -> ANSWER(validation error) -> ANSWER`.
 
-The current automated suite reports 65 passed and 2 skipped live tests, with
-87% total coverage. The 0.3.0 wheel and sdist build locally.
+The current automated suite reports 71 passed and 2 skipped live tests, with
+87% total coverage. The 0.4.0 wheel and sdist build locally.
 
-Live verification should be recorded separately:
 
 ```bash
 heuriva doctor --probe --probe-timeout 30
@@ -298,6 +317,6 @@ does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
 
-The pytest live smoke files are opt-in and remain skipped by default. v0.3 live
+The pytest live smoke files are opt-in and remain skipped by default. v0.4 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.

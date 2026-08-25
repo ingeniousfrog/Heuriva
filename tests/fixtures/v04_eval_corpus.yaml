@@ -1,0 +1,87 @@
+version: "0.4"
+cases:
+  - id: forbidden_search_guard
+    kind: known_good
+    evidence_level: fake_integration
+    prompt: "Explain local state without external search"
+    search_policy: forbidden
+    harness: forbidden_search_guard
+    expected_quality_signal: "user-forbidden search never calls the provider and records search_forbidden"
+    expected:
+      status: done
+      search_provider_calls: 0
+      search_guard_reasons: [search_forbidden]
+      min_search_guards: 1
+
+  - id: duplicate_query_guard
+    kind: known_good
+    evidence_level: fake_integration
+    prompt: "Controller repeats the same web query"
+    harness: duplicate_query_guard
+    expected_quality_signal: "duplicate query guard fires before a second provider call"
+    expected:
+      status: done
+      search_provider_calls: 1
+      search_guard_reasons: [duplicate_query]
+      min_search_guards: 1
+
+  - id: irrelevant_candidate_rejected
+    kind: known_good
+    evidence_level: synthetic
+    prompt: "Search returns unrelated weather results for a Heuriva release query"
+    harness: irrelevant_candidate_rejected
+    expected_quality_signal: "irrelevant candidate remains raw/rejected and does not enter state evidence"
+    expected:
+      min_raw_candidates: 1
+      min_accepted_evidence: 0
+      min_rejected_candidates: 1
+
+  - id: completion_enforce_block
+    kind: known_bad
+    evidence_level: fake_integration
+    prompt: "Explain safety tradeoffs"
+    criteria: ["mention safety"]
+    harness: completion_enforce_block
+    expected_quality_signal: "enforce mode blocks done when the task contract is unmet"
+    expected:
+      status: failed
+      termination_reason: completion_not_met
+      completion_verdict: fail
+
+  - id: completion_enforce_repair
+    kind: known_good
+    evidence_level: fake_integration
+    prompt: "Explain safety"
+    criteria: ["mention safety"]
+    harness: completion_enforce_repair
+    expected_quality_signal: "enforce mode allows a bounded completion repair before done"
+    expected:
+      status: done
+      completion_verdict: pass
+
+  - id: cited_but_off_task
+    kind: known_bad
+    evidence_level: fake_integration
+    prompt: "ANSWER cites a valid source but misses an explicit criterion"
+    criteria: ["mention safety"]
+    harness: cited_but_off_task
+    expected_quality_signal: "completion verdict stays separate from citation validation"
+    expected:
+      status: done
+      citation_validation: passed
+      completion_verdict: fail
+
+  - id: stored_live_relevance_readback
+    kind: known_good
+    evidence_level: stored_live
+    prompt: "Read an existing live trajectory with relevance or completion metadata"
+    task_id: null
+    expected_quality_signal: "eval-suite summarizes stored provenance without replay"
+    notes: "Set task_id in a local corpus overlay or ignored checklist; missing task_id is reported as missing, not failed."
+
+  - id: fresh_live_opt_in
+    kind: known_good
+    evidence_level: fresh_live
+    prompt: "Optional live evidence collection for quality signals"
+    expected_quality_signal: "fresh live evidence is opt-in and never implied by default suite success"
+    notes: "Requires --include-fresh-live or HEURIVA_EVAL_SUITE_FRESH_LIVE=1; v0.4 still does not auto-call live judges."

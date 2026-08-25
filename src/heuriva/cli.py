@@ -16,7 +16,7 @@ from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
 from heuriva.core.task_contract import SearchPolicy
 from heuriva.diagnostics import collect_diagnostics
-from heuriva.evaluation import evaluate_trajectory
+from heuriva.evaluation import evaluate_trajectory, render_suite_report, run_eval_suite
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
 from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
@@ -274,6 +274,56 @@ def eval_task(
     typer.echo(f"completion_verdict: {report.completion_verdict}")
     if report.failed_criteria:
         typer.echo(f"failed_criteria: {', '.join(report.failed_criteria)}")
+
+
+@app.command(name="eval-suite")
+def eval_suite(
+    corpus: Annotated[
+        str | None,
+        typer.Option("--corpus", help="Path to a versioned eval corpus YAML file."),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+    include_fresh_live: Annotated[
+        bool,
+        typer.Option(
+            "--include-fresh-live",
+            help=(
+                "Opt into fresh_live corpus cases. "
+                "Also enabled by HEURIVA_EVAL_SUITE_FRESH_LIVE=1."
+            ),
+        ),
+    ] = False,
+    db_path: Annotated[
+        str | None,
+        typer.Option(
+            "--db",
+            help="SQLite path for stored_live summaries. Defaults to configured storage.",
+        ),
+    ] = None,
+) -> None:
+    try:
+        sqlite_path = db_path
+        if sqlite_path is None:
+            sqlite_path = str(load_config().storage.sqlite_path)
+        report = run_eval_suite(
+            corpus_path=corpus,
+            sqlite_path=sqlite_path,
+            # None lets HEURIVA_EVAL_SUITE_FRESH_LIVE enable opt-in when the
+            # CLI flag is absent; True forces opt-in when the flag is present.
+            include_fresh_live=True if include_fresh_live else None,
+        )
+    except Exception as exc:
+        typer.echo(f"Eval suite failed: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False))
+    else:
+        typer.echo(render_suite_report(report))
+    failed = report.totals_by_status.get("fail", 0)
+    if failed:
+        raise typer.Exit(1)
 
 
 def _build_engine() -> RuntimeEngine:

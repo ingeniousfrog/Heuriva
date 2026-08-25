@@ -1,8 +1,6 @@
-# Local planning docs — do not publish
+# Local Heuriva docs — do not publish to GitHub
+docs/
 plan.md
-docs/acceptance/live-acceptance-checklist-v0.1.md
-docs/acceptance/live-acceptance-checklist-v0.2.md
-docs/acceptance/live-acceptance-checklist-v0.3.md
 
 # Local development artifacts
 .venv/

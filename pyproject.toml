@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heuriva"
-version = "0.3.0"
+version = "0.4.0"
 description = "An adaptive cognitive runtime for language models."
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,13 @@ heuriva = "heuriva.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/heuriva"]
+
+[tool.hatch.build]
+include = [
+  "src/heuriva/**/*.py",
+  "src/heuriva/data/*.yaml",
+  "src/heuriva/prompts/*.txt",
+]
 
 [tool.hatch.build.targets.sdist]
 include = [
