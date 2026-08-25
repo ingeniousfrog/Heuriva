@@ -346,11 +346,11 @@ The pytest live smoke files are opt-in and remain skipped by default. v0.6 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.
 
-## Planned Next
+## Planned Next: v0.7
 
-Post-v0.6 evidence is closed: gates stay closed (`recommend_enforce=false`,
-`enter_verify_design=false`). Candidate next product theme is a **narrow
-table-driven completion term expansion** for known CN/EN quality-word FN while
-keeping `observe` defaults — not VERIFY and not default semantic enforce. See
-local `plan.md` §64, `docs/roadmap-post-v0.6.md`, and
-`docs/acceptance/post-v0.6-evidence-checklist.md` on a development checkout.
+Post-v0.6 evidence kept enforce/VERIFY gates closed. The next planned product
+version is **Narrow Completion Lexicon** (shared, regressable CN/EN quality-word
+tables for deterministic completion) so keyword FN noise is not mistaken for
+VERIFY leaks. See local `plan.md` §65–§69 and `docs/roadmap-v0.7.md` on a
+development checkout. Defaults remain `observe`; no VERIFY operator is planned
+as a v0.7 default.

@@ -315,10 +315,10 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-Post-v0.6 证据已关闭：`recommend_enforce=false`，`enter_verify_design=false`。候选下一产品主题是 **窄域、表驱动的 completion 质量词扩展**（降低中英关键词 FN），默认仍 observe；不是 VERIFY，也不是默认 semantic enforce。见本地 `plan.md` §64、`docs/roadmap-post-v0.6.md`、`docs/acceptance/post-v0.6-evidence-checklist.md`。
+Post-v0.6 已关闭；开闸结论仍是 observe 默认、VERIFY 关闭。下一产品版本是 **v0.7 Narrow Completion Lexicon**（规划中，见本地 `plan.md` §65–§69 与 `docs/roadmap-v0.7.md`）：把中英质量词匹配做成共享、可回归的词表层，锁住 `8e45ed21` 类 FN 回潮，而不是急着加 VERIFY 或默认 semantic enforce。
 
 优先级：
 
-1. 若开 v0.7：先写 `docs/roadmap-v0.7.md` 与 acceptance checklist，再改 term 表并加 harness。
-2. 只有合同层之后仍有 ≥2 个不可修复真实 leak 时，再讨论 VERIFY。
-3. 禁止把通用 LLM / NLI judge 做成默认 completion。
+1. 实现共享 lexicon + 中文 safety/tradeoffs known-good harness。
+2. 仅在有证据时做有界表扩展；默认仍 observe。
+3. 在 **8765** 上做 v0.7 live checklist；只有合同 + lexicon 之后仍有 ≥2 不可修复 leak 时再谈 VERIFY。
