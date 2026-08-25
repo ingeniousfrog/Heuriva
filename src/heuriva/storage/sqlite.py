@@ -13,7 +13,7 @@ from heuriva.core.observation import Observation
 from heuriva.core.state import CognitiveState
 from heuriva.runtime.state_delta import calculate_state_delta
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SQLiteStore:
@@ -238,6 +238,106 @@ class SQLiteStore:
             ],
         }
 
+    def save_eval_run(
+        self,
+        *,
+        task_id: str,
+        trajectory_id: str | None,
+        case_id: str | None,
+        judge_mode: str,
+        deterministic_verdict: str,
+        judge_verdict: str,
+        disagreement_bucket: str,
+        model: str,
+        prompt_version: str,
+        prompt_hash: str,
+        provenance: dict[str, Any],
+        result: dict[str, Any],
+        failure_code: str | None = None,
+    ) -> str:
+        eval_run_id = new_id()
+        now = utc_now().isoformat()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT INTO eval_runs (
+                  id, task_id, trajectory_id, case_id, judge_mode,
+                  deterministic_verdict, judge_verdict, disagreement_bucket,
+                  model, prompt_version, prompt_hash, failure_code,
+                  provenance_json, result_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    eval_run_id,
+                    task_id,
+                    trajectory_id,
+                    case_id,
+                    judge_mode,
+                    deterministic_verdict,
+                    judge_verdict,
+                    disagreement_bucket,
+                    model,
+                    prompt_version,
+                    prompt_hash,
+                    failure_code,
+                    json.dumps(provenance, ensure_ascii=False),
+                    json.dumps(result, ensure_ascii=False),
+                    now,
+                ),
+            )
+            conn.commit()
+        return eval_run_id
+
+    def list_eval_runs(self, task_id: str) -> tuple[dict[str, Any], ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  id, task_id, trajectory_id, case_id, judge_mode,
+                  deterministic_verdict, judge_verdict, disagreement_bucket,
+                  model, prompt_version, prompt_hash, failure_code,
+                  provenance_json, result_json, created_at
+                FROM eval_runs
+                WHERE task_id = ?
+                ORDER BY created_at
+                """,
+                (task_id,),
+            ).fetchall()
+        return tuple(_eval_run_row_to_dict(row) for row in rows)
+
+    def get_eval_run(self, eval_run_id: str) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                """
+                SELECT
+                  id, task_id, trajectory_id, case_id, judge_mode,
+                  deterministic_verdict, judge_verdict, disagreement_bucket,
+                  model, prompt_version, prompt_hash, failure_code,
+                  provenance_json, result_json, created_at
+                FROM eval_runs
+                WHERE id = ?
+                """,
+                (eval_run_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(eval_run_id)
+        return _eval_run_row_to_dict(row)
+
+    def leak_task_ids_from_eval_runs(self) -> tuple[str, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT task_id
+                FROM eval_runs
+                WHERE disagreement_bucket = 'deterministic_pass_judge_fail'
+                  AND json_extract(result_json, '$.deterministic.citation_validation')
+                      = 'passed'
+                  AND deterministic_verdict = 'pass'
+                ORDER BY task_id
+                """
+            ).fetchall()
+        return tuple(str(row["task_id"]) for row in rows)
+
     @staticmethod
     def stale_running_summary(
         path: str | Path, *, max_age_seconds: int
@@ -261,8 +361,20 @@ class SQLiteStore:
     def _initialize(self) -> None:
         with closing(self._connect(initialize=False)) as conn:
             conn.executescript(SCHEMA_SQL)
-            conn.execute("DELETE FROM schema_meta WHERE version != ?", (SCHEMA_VERSION,))
-            conn.execute("INSERT OR IGNORE INTO schema_meta(version) VALUES (?)", (SCHEMA_VERSION,))
+            row = conn.execute("SELECT version FROM schema_meta LIMIT 1").fetchone()
+            if row is None:
+                conn.execute(
+                    "INSERT INTO schema_meta(version) VALUES (?)",
+                    (SCHEMA_VERSION,),
+                )
+            else:
+                version = int(row[0])
+                if version > SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"unsupported SQLite schema version: {version} > {SCHEMA_VERSION}"
+                    )
+                if version < SCHEMA_VERSION:
+                    _migrate_schema(conn, from_version=version)
             conn.commit()
 
     def _connect(self, *, initialize: bool = True) -> sqlite3.Connection:
@@ -369,6 +481,59 @@ def _step_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "state_after": state_after_json,
         "state_delta": calculate_state_delta(state_before, state_after).to_dict(),
     }
+
+
+def _eval_run_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "task_id": row["task_id"],
+        "trajectory_id": row["trajectory_id"],
+        "case_id": row["case_id"],
+        "judge_mode": row["judge_mode"],
+        "deterministic_verdict": row["deterministic_verdict"],
+        "judge_verdict": row["judge_verdict"],
+        "disagreement_bucket": row["disagreement_bucket"],
+        "model": row["model"],
+        "prompt_version": row["prompt_version"],
+        "prompt_hash": row["prompt_hash"],
+        "failure_code": row["failure_code"],
+        "provenance": json.loads(row["provenance_json"]),
+        "result": json.loads(row["result_json"]),
+        "created_at": row["created_at"],
+    }
+
+
+def _migrate_schema(conn: sqlite3.Connection, *, from_version: int) -> None:
+    # SCHEMA_SQL already applies CREATE TABLE IF NOT EXISTS for new tables.
+    # Explicit version bumps keep old task rows readable without rewrite.
+    if from_version < 2:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS eval_runs (
+              id TEXT PRIMARY KEY,
+              task_id TEXT NOT NULL,
+              trajectory_id TEXT,
+              case_id TEXT,
+              judge_mode TEXT NOT NULL,
+              deterministic_verdict TEXT NOT NULL,
+              judge_verdict TEXT NOT NULL,
+              disagreement_bucket TEXT NOT NULL,
+              model TEXT NOT NULL,
+              prompt_version TEXT NOT NULL,
+              prompt_hash TEXT NOT NULL,
+              failure_code TEXT,
+              provenance_json TEXT NOT NULL,
+              result_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY(task_id) REFERENCES tasks(id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_eval_runs_task_created "
+            "ON eval_runs(task_id, created_at)"
+        )
+    conn.execute("UPDATE schema_meta SET version = ?", (SCHEMA_VERSION,))
 
 
 def _iso_timestamp(value: str) -> float:
@@ -481,8 +646,28 @@ CREATE TABLE IF NOT EXISTS runtime_events (
   FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
 
+CREATE TABLE IF NOT EXISTS eval_runs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  trajectory_id TEXT,
+  case_id TEXT,
+  judge_mode TEXT NOT NULL,
+  deterministic_verdict TEXT NOT NULL,
+  judge_verdict TEXT NOT NULL,
+  disagreement_bucket TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  prompt_hash TEXT NOT NULL,
+  failure_code TEXT,
+  provenance_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_states_task_revision ON states(task_id, revision_index);
 CREATE INDEX IF NOT EXISTS idx_states_task_step ON states(task_id, step_index);
 CREATE INDEX IF NOT EXISTS idx_trajectory_steps_task_step ON trajectory_steps(task_id, step_index);
 CREATE INDEX IF NOT EXISTS idx_runtime_events_task_created ON runtime_events(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_task_created ON eval_runs(task_id, created_at);
 """

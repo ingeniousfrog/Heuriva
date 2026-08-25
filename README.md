@@ -4,24 +4,23 @@
 
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.4 keeps the
-v0.3 three-operator quality loop and adds a reproducible evaluation layer: a
-versioned known-good/known-bad corpus, `heuriva eval-suite`, aggregate quality
-reports, forced-branch harnesses, and explicit promotion rules for quality
-modes.
+Heuriva is a Python CLI cognitive runtime for language models. v0.5 keeps the
+v0.3 three-operator quality loop and the v0.4 evaluation corpus/suite, and adds
+opt-in fresh judging: `heuriva eval --judge`, eval-run persistence, disagreement
+and promotion reports, and an explicit VERIFY design gate.
 
-v0.4 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. It does not claim that a
-model assessment proves correctness; quality verdicts are stored runtime signals
-with explicit provenance. Fake and synthetic suite results are regression
-signals, not product proof.
+v0.5 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. Fresh judge verdicts are
+opt-in model assessments with provenance; they do not overwrite trajectories and
+are not objective proof of answer correctness. Fake and synthetic suite results
+remain regression signals, not product proof.
 
 ## Current Status
 
-Release status: v0.4 implements the evaluation corpus and suite planned after
-v0.3 acceptance. Quality modes stay at `observe` by default; see the local
-promotion notes under `docs/` on a development checkout. Live checklists
-remain local-only and ignored by Git because they contain machine-specific task
-IDs.
+Release status: v0.5 implements opt-in fresh judging and promotion/VERIFY gate
+reports on top of the v0.4 corpus/suite. Quality modes stay at `observe` by
+default; see the local promotion notes under `docs/` on a development checkout.
+Live checklists remain local-only and ignored by Git because they contain
+machine-specific task IDs.
 
 Implemented in this repository:
 
@@ -29,10 +28,13 @@ Implemented in this repository:
 - `heuriva setup`, `heuriva doctor`, `heuriva run`, interactive `heuriva`, and
   `heuriva show`
 - Read-only `heuriva eval` and `heuriva eval --json` for saved trajectories
+- Opt-in `heuriva eval --judge` with provenance, disagreement buckets, promotion
+  advice, and a VERIFY design gate; eval runs persist separately from trajectories
 - Offline `heuriva eval-suite` / `heuriva eval-suite --json` over a versioned
   corpus of synthetic, fake-integration, stored-live, and fresh-live cases
 - Aggregate suite reports with pass/fail/missing/skipped totals, evidence-level
-  separation, search/citation/completion signal rollups, and promotion stats
+  separation, search/citation/completion signal rollups, promotion stats, and
+  VERIFY gate status
 - Forced harness coverage for forbidden-search, duplicate-query, enforce block,
   bounded repair, and citation-versus-completion separation
 - Version visibility through `heuriva --version` and `heuriva doctor`
@@ -45,9 +47,10 @@ Implemented in this repository:
   executor selection
 - LLM and search executors
 - Immutable Pydantic v2 schemas for state, decision, observation, events,
-  trajectory records, task-level `TaskContract`, and eval corpus cases
-- SQLite trajectory store with schema versioning, foreign keys, unique step
-  constraints, and atomic step commits
+  trajectory records, task-level `TaskContract`, eval corpus cases, and judge
+  provenance
+- SQLite trajectory store with schema versioning (v2 adds `eval_runs`), foreign
+  keys, unique step constraints, and atomic step commits
 - Runtime-owned progress policy with same-operator, no-material-progress, and
   answer-reserve guards
 - Runtime-owned search quality guards for forbidden search, local/provided
@@ -66,7 +69,7 @@ Implemented in this repository:
   `attempt_count` metadata
 - Search timeout classification, stale running task diagnostics, and opt-in live
   smoke tests
-- Automated fake model/search tests for core v0.1 through v0.4 runtime and eval
+- Automated fake model/search tests for core v0.1 through v0.5 runtime and eval
   paths
 
 Not implemented:
@@ -74,10 +77,10 @@ Not implemented:
 - Learning policies, policy lifecycle, replay, dashboard, MCP,
   shell/filesystem/Python executors, multi-agent workflows, URL crawling, daemon
   mode, task resume, or concurrent queues
-- A separate `VERIFY` operator
-- Fresh model judging in `heuriva eval --judge`; the flag remains reserved
+- A separate `VERIFY` operator (design gate remains unmet by default)
 - Default semantic enforce; promotion rules keep quality modes at `observe`
   until live corpus evidence justifies a narrower change
+- Default fresh judging; `--judge` is always explicit opt-in
 
 Live Cursor-compatible endpoint and real web search smoke tests are opt-in and
 are skipped by the default automated test suite.
@@ -135,6 +138,8 @@ heuriva show --trace <task_id>
 heuriva show --json <task_id>
 heuriva eval <task_id>
 heuriva eval --json <task_id>
+heuriva eval --judge <task_id>
+heuriva eval --judge --json <task_id>
 heuriva eval-suite
 heuriva eval-suite --json
 ```
@@ -144,11 +149,19 @@ search guards, raw/accepted/rejected evidence counts, citation status,
 completion verdicts, and parse-warning counts without replaying the task or
 calling the model.
 
+`heuriva eval --judge` is explicit opt-in. It calls the configured
+OpenAI-compatible model once (plus bounded parse repairs), records model /
+prompt-hash / timestamp provenance, reports disagreement against the
+deterministic completion verdict, and can persist an `eval_runs` row without
+rewriting the original trajectory. Use `--no-persist-eval` to skip storage.
+Judge results are never treated as objective truth.
+
 `heuriva eval-suite` defaults to offline deterministic/fake harness cases. It
 does not mutate `~/.heuriva/memory.db` for those harnesses. `stored_live` cases
 are summarized read-only when a local `task_id` exists; otherwise they are
 `missing`, not `fail`. `fresh_live` cases require `--include-fresh-live` or
-`HEURIVA_EVAL_SUITE_FRESH_LIVE=1` and remain clearly labeled.
+`HEURIVA_EVAL_SUITE_FRESH_LIVE=1` and remain clearly labeled. Suite reports also
+include promotion check advice and a VERIFY design gate conclusion.
 
 Start the simple REPL:
 
@@ -297,13 +310,14 @@ citation validation and repair, model retry accounting, search timeout
 classification, stale task diagnostics, task contracts, search guards, evidence
 relevance accounting, non-duplicated eval evidence counts, completion enforce
 mode, bounded completion repair, common Chinese/English criterion matching,
-read-only eval output, eval corpus schema, offline eval-suite reports,
-stored-live missing/summary behavior, and dynamic runtime paths including
-`ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
+read-only eval output, opt-in `--judge` provenance/disagreement persistence,
+eval corpus schema, offline eval-suite reports, stored-live missing/summary
+behavior, SQLite schema migration to `eval_runs`, and dynamic runtime paths
+including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
 `SEARCH -> ANSWER(validation error) -> ANSWER`.
 
-The current automated suite reports 71 passed and 2 skipped live tests, with
-87% total coverage. The 0.4.0 wheel and sdist build locally.
+The current automated suite reports 80 passed and 2 skipped live tests. The
+0.5.0 wheel and sdist build locally.
 
 
 ```bash
@@ -317,6 +331,6 @@ does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
 
-The pytest live smoke files are opt-in and remain skipped by default. v0.4 live
+The pytest live smoke files are opt-in and remain skipped by default. v0.5 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.

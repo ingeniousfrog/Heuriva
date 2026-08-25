@@ -6,9 +6,9 @@
 
 Heuriva 是一个 Python CLI 形态的认知运行时，用来观察一个冻结权重的语言模型在显式状态、动态操作选择和可持久化轨迹帮助下，如何一步一步解决任务。
 
-v0.4 保留 v0.3 的三操作质量闭环，并补上可复验的 evaluation 层：versioned known-good/known-bad corpus、`heuriva eval-suite`、跨 case 聚合报告、forced-branch harness，以及 quality mode 的 promotion 规则。
+v0.5 保留 v0.3 的三操作质量闭环与 v0.4 的 evaluation corpus/suite，并增加受控 fresh judging：`heuriva eval --judge`、独立 eval run 持久化、disagreement/promotion 报告，以及 VERIFY 设计门槛结论。
 
-v0.4 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。它不会把模型 assessment 写成客观正确率或事实证明；所有质量 verdict 都只是带 provenance 的运行信号。fake/synthetic suite 结果只是回归信号，不是产品证明。
+v0.5 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
 
 Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK，而是证明一条可检查的最小闭环：
 
@@ -18,18 +18,20 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 每一步的 state、decision、observation 都能写入 SQLite。
 - 用户可以通过 CLI 查看简洁 trace，也可以用 `--trace` 或 `show` 检查细节。
 - v0.3 质量信号可以通过 corpus 与 `eval-suite` 跨 case 复验。
+- v0.5 可对 saved trajectory 做显式 opt-in fresh judging，并报告 disagreement。
 
 ## 当前状态
 
-发布定性：v0.4 实现了 v0.3 accepted 之后规划的 evaluation corpus 与 suite。默认 quality mode 仍是 `observe`；本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
+发布定性：v0.5 在 v0.4 corpus/suite 之上实现了受控 fresh judging 与 promotion/VERIFY gate 报告。默认 quality mode 仍是 `observe`；本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
 
 这个仓库当前已经实现：
 
 - Python package 与 `heuriva` CLI 入口
 - `heuriva setup`、`heuriva doctor`、`heuriva run`、交互式 `heuriva`、`heuriva show`
 - 只读 `heuriva eval` 和 `heuriva eval --json`
+- 显式 opt-in 的 `heuriva eval --judge`：带 provenance、disagreement bucket、promotion 建议、VERIFY gate；eval run 与 trajectory 分表保存
 - 默认离线的 `heuriva eval-suite` / `heuriva eval-suite --json`
-- 跨 case 聚合报告：pass/fail/missing/skipped、evidence level 分层、search/citation/completion 汇总、promotion 统计
+- 跨 case 聚合报告：pass/fail/missing/skipped、evidence level 分层、search/citation/completion 汇总、promotion 统计与 VERIFY gate
 - forced harness：forbidden-search、duplicate-query、enforce block、bounded repair、citation 与 completion 分离
 - 通过 `heuriva --version` 和 `heuriva doctor` 查看版本
 - `~/.heuriva/` 下的本地配置
@@ -38,8 +40,8 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - LLM controller 的结构化 JSON 校验、`success_criteria` 规范化、SEARCH intent 字段和一次修复重试
 - 确定性 `ExecutorRouter`，把 operator 选择和 executor 选择分开
 - LLM executor 和 search executor
-- 基于 Pydantic v2 的不可变核心 schema，以及不可变 `TaskContract` 与 eval corpus schema
-- SQLite trajectory store：schema version、foreign keys、唯一 step 约束、单步事务提交
+- 基于 Pydantic v2 的不可变核心 schema，以及不可变 `TaskContract`、eval corpus 与 judge provenance schema
+- SQLite trajectory store：schema v2（新增 `eval_runs`）、foreign keys、唯一 step 约束、单步事务提交
 - runtime progress policy：same-operator、no-material-progress 和 answer-reserve guard
 - runtime search quality guard：用户禁止搜索、local/provided source scope、重复 query、search budget、缺少搜索意图、连续无相关结果
 - search executor metadata：区分 raw candidate、accepted evidence、rejected candidate 和确定性 relevance verdict
@@ -48,7 +50,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 确定性 task-level completion assessment：支持 `off`/`observe`/`enforce`，限制 repair 次数，并覆盖少量常见中英文质量词等价匹配
 - `llm.max_retries` 控制的模型请求 retry，并记录 `attempt_count`
 - search timeout 分类、stale running task 诊断和 opt-in live smoke tests
-- 基于 fake model/search 的 v0.1 到 v0.4 自动化测试
+- 基于 fake model/search 的 v0.1 到 v0.5 自动化测试
 
 当前明确没有实现：
 
@@ -56,8 +58,8 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - shell/filesystem/Python executor、URL crawling
 - daemon、任务恢复、并发队列
 - provider-specific model client
-- 独立 `VERIFY` operator
-- `heuriva eval --judge` 的 fresh model judging；当前 flag 预留，默认 eval 是只读路径
+- 独立 `VERIFY` operator（设计门槛默认仍未满足）
+- 默认启用 fresh judge；`--judge` 必须显式 opt-in
 - 默认 semantic enforce；promotion 规则要求在 live corpus 证据足够前保持 `observe`
 
 真实 Cursor-compatible endpoint 和真实公网搜索 smoke test 是可选验证，默认自动化测试会跳过，不访问网络。
@@ -167,13 +169,17 @@ heuriva show --trace <task_id>
 heuriva show --json <task_id>
 heuriva eval <task_id>
 heuriva eval --json <task_id>
+heuriva eval --judge <task_id>
+heuriva eval --judge --json <task_id>
 heuriva eval-suite
 heuriva eval-suite --json
 ```
 
 `heuriva eval` 默认只读，不 replay task，也不会调用模型。它会汇总已保存的 task contract、search guard、raw/accepted/rejected evidence 数量、citation 状态、completion verdict 和 parse warning 计数。
 
-`heuriva eval-suite` 默认只跑 deterministic/fake harness，不改写用户 `memory.db`。`stored_live` 在本机有 task_id 时只读汇总，否则标记为 `missing` 而不是 `fail`。`fresh_live` 必须显式 `--include-fresh-live` 或 `HEURIVA_EVAL_SUITE_FRESH_LIVE=1`。
+`heuriva eval --judge` 是显式 opt-in。它会调用配置的 OpenAI-compatible 模型（加有界 parse repair），记录 model / prompt-hash / timestamp provenance，对比 deterministic completion verdict 产出 disagreement，并可把结果写入独立的 `eval_runs` 表而不改写原 trajectory。可用 `--no-persist-eval` 跳过持久化。judge 结果不能当作客观真理。
+
+`heuriva eval-suite` 默认只跑 deterministic/fake harness，不改写用户 `memory.db`。`stored_live` 在本机有 task_id 时只读汇总，否则标记为 `missing` 而不是 `fail`。`fresh_live` 必须显式 `--include-fresh-live` 或 `HEURIVA_EVAL_SUITE_FRESH_LIVE=1`。suite 报告也包含 promotion 建议与 VERIFY 设计门槛结论。
 
 进入简单交互模式：
 
@@ -235,7 +241,7 @@ API key 只从环境变量读取，不写入 YAML、SQLite 或 trace。`memory.d
 
 默认启用搜索。搜索 query 会发送给第三方搜索服务；搜索结果摘要会被当作不可信外部数据，而不是模型可执行指令。
 
-quality mode 支持 `off`、`observe`、`enforce`。默认仍是 `observe`。`enforce` 可供本地实验和 harness 覆盖，但 v0.4 不建议默认开启 semantic enforce：deterministic/fake suite 全绿只是必要条件，还需要 live corpus review。
+quality mode 支持 `off`、`observe`、`enforce`。默认仍是 `observe`。`enforce` 可供本地实验和 harness 覆盖，但 v0.5 不建议默认开启 semantic enforce：deterministic/fake suite 全绿只是必要条件，还需要 live corpus review 与 judge disagreement 评估。
 
 ## 运行时流程
 
@@ -290,7 +296,7 @@ SEARCH decision 需要带 `query`、`evidence_need`、`expected_signal` 和 `sou
 - `ANALYZE -> ANSWER`
 - `SEARCH -> ANSWER(validation error) -> ANSWER`
 
-当前自动化结果为 71 passed、2 skipped live tests，总覆盖率 87%。package build 生成 `heuriva-0.4.0` sdist 和 wheel。这证明 v0.4 evaluation corpus/suite 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
+当前自动化结果为 80 passed、2 skipped live tests。package build 生成 `heuriva-0.5.0` sdist 和 wheel。这证明 v0.5 fresh judging / eval-run 持久化 / disagreement 与 VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
 
 真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 
@@ -303,14 +309,14 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.4 后，下一步更适合做受控 fresh judging 与 promotion 决策，而不是急着扩展新 operator。
+v0.5 已把受控 fresh judging 与 promotion/VERIFY gate 落地。下一步应积累 live 证据，而不是急着扩展新 operator。
 
 优先级最高的是：
 
-1. 在 ignored v0.4 checklist 里记录真实 Cursor-compatible endpoint task IDs。
-2. 用 stored-live corpus overlay 汇总本机 live trajectories。
-3. 只有在 live corpus 与 disagreement report 足够时，再考虑局部 enforce。
-4. 在本地 `docs/promotion-rules-v0.4.md` 规则下决定是否进入 v0.5 fresh judging。
-5. 只有当至少两个真实任务在现有 pipeline 后仍稳定 citation 通过但任务未完成，再讨论后续 `VERIFY` 设计。
+1. 在 ignored v0.5 checklist 里记录真实 Cursor-compatible endpoint task IDs。
+2. 对 saved live trajectories 跑 `heuriva eval --judge`，保存 disagreement 与 eval_run。
+3. 用 stored-live corpus overlay 汇总本机 live trajectories。
+4. 只有在 live corpus 与 disagreement 比率可接受时，再考虑局部 semantic enforce。
+5. 只有当至少两个真实任务在 citation/relevance/completion pipeline 后仍稳定漏判，且 TaskContract/SEARCH/ANSWER/repair 无法修复时，再讨论 `VERIFY` 设计。
 
-一句话：v0.4 先把“质量信号可复验”做扎实；学习、多 Agent 或新的 operator 仍应等真实 evaluation 证据之后再做。
+一句话：v0.5 先把“judge 可复验、可对照、不改写历史”做扎实；学习、多 Agent 或新的 operator 仍应等真实 evaluation 证据之后再做。

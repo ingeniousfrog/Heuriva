@@ -16,7 +16,14 @@ from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
 from heuriva.core.task_contract import SearchPolicy
 from heuriva.diagnostics import collect_diagnostics
-from heuriva.evaluation import evaluate_trajectory, render_suite_report, run_eval_suite
+from heuriva.eval_judge import FreshJudge
+from heuriva.evaluation import (
+    evaluate_trajectory,
+    evaluate_with_judge,
+    render_judged_report,
+    render_suite_report,
+    run_eval_suite,
+)
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
 from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
@@ -240,40 +247,80 @@ def eval_task(
         bool,
         typer.Option(
             "--judge",
-            help="Reserved for fresh model judging; not used by the default read-only eval.",
+            help=(
+                "Opt into a fresh model judge. Default eval stays read-only and "
+                "does not call a model."
+            ),
         ),
     ] = False,
+    persist_eval: Annotated[
+        bool,
+        typer.Option(
+            "--persist-eval/--no-persist-eval",
+            help="When --judge is set, store the eval run without rewriting the trajectory.",
+        ),
+    ] = True,
 ) -> None:
-    if judge:
-        typer.echo(
-            "--judge is reserved for future fresh model assessment; default eval is read-only.",
-            err=True,
-        )
+    model_client: ModelClient | None = None
     try:
         config = load_config()
-        data = SQLiteStore(config.storage.sqlite_path).get_trajectory(task_id)
+        store = SQLiteStore(config.storage.sqlite_path)
+        data = store.get_trajectory(task_id)
+        if not judge:
+            report = evaluate_trajectory(data)
+            if json_output:
+                typer.echo(json.dumps(report.to_dict(), ensure_ascii=False))
+                return
+            typer.echo(f"task_id: {report.task_id}")
+            typer.echo(f"status: {report.status}")
+            typer.echo(f"evidence_level: {report.evidence_level}")
+            typer.echo(f"search_steps: {report.search_steps}")
+            typer.echo(f"search_guards: {report.search_guard_count}")
+            typer.echo(f"raw_candidates: {report.raw_candidate_count}")
+            typer.echo(f"accepted_evidence: {report.accepted_evidence_count}")
+            typer.echo(f"rejected_candidates: {report.rejected_candidate_count}")
+            typer.echo(f"citation_validation: {report.citation_validation}")
+            typer.echo(f"completion_verdict: {report.completion_verdict}")
+            if report.failed_criteria:
+                typer.echo(f"failed_criteria: {', '.join(report.failed_criteria)}")
+            return
+
+        model_client = ModelClient(
+            base_url=config.llm.base_url,
+            model=config.llm.model,
+            api_key=api_key_for(config),
+            connect_timeout_seconds=config.llm.connect_timeout_seconds,
+            read_timeout_seconds=config.llm.read_timeout_seconds,
+            max_retries=config.llm.max_retries,
+        )
+        fresh_judge = FreshJudge(
+            model_client=model_client,
+            model_name=config.llm.model,
+            base_url=config.llm.base_url,
+            repair_attempts=config.runtime.controller_repair_attempts,
+        )
+        prior_leaks = store.leak_task_ids_from_eval_runs()
+        judged = evaluate_with_judge(
+            data,
+            judge=fresh_judge,
+            store=store if persist_eval else None,
+            persist=persist_eval,
+            prior_leak_task_ids=prior_leaks,
+        )
     except KeyError as exc:
         typer.echo(f"Task not found: {task_id}", err=True)
         raise typer.Exit(4) from exc
     except Exception as exc:
-        typer.echo(f"Could not read task: {exc}", err=True)
+        typer.echo(f"Could not evaluate task: {exc}", err=True)
         raise typer.Exit(3) from exc
-    report = evaluate_trajectory(data)
+    finally:
+        if model_client is not None:
+            model_client.close()
+
     if json_output:
-        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False))
+        typer.echo(json.dumps(judged.to_dict(), ensure_ascii=False))
         return
-    typer.echo(f"task_id: {report.task_id}")
-    typer.echo(f"status: {report.status}")
-    typer.echo(f"evidence_level: {report.evidence_level}")
-    typer.echo(f"search_steps: {report.search_steps}")
-    typer.echo(f"search_guards: {report.search_guard_count}")
-    typer.echo(f"raw_candidates: {report.raw_candidate_count}")
-    typer.echo(f"accepted_evidence: {report.accepted_evidence_count}")
-    typer.echo(f"rejected_candidates: {report.rejected_candidate_count}")
-    typer.echo(f"citation_validation: {report.citation_validation}")
-    typer.echo(f"completion_verdict: {report.completion_verdict}")
-    if report.failed_criteria:
-        typer.echo(f"failed_criteria: {', '.join(report.failed_criteria)}")
+    typer.echo(render_judged_report(judged))
 
 
 @app.command(name="eval-suite")
@@ -290,8 +337,7 @@ def eval_suite(
         typer.Option(
             "--include-fresh-live",
             help=(
-                "Opt into fresh_live corpus cases. "
-                "Also enabled by HEURIVA_EVAL_SUITE_FRESH_LIVE=1."
+                "Opt into fresh_live corpus cases. Also enabled by HEURIVA_EVAL_SUITE_FRESH_LIVE=1."
             ),
         ),
     ] = False,

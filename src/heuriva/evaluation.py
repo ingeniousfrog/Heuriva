@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 from dataclasses import asdict, dataclass, field
 from importlib import resources
@@ -12,16 +13,68 @@ import yaml
 from heuriva.core.evaluation import (
     CaseKind,
     CaseResultStatus,
+    DisagreementBucket,
+    DisagreementReport,
     EvalCorpus,
     EvalCorpusCase,
     EvidenceLevel,
     ExpectedCaseSignals,
+    JudgeAssessment,
+    JudgeVerdict,
+    PromotionCheckAdvice,
+    PromotionReport,
+    VerifyGateReport,
 )
 from heuriva.eval_harness import HarnessOutcome, run_harness
+from heuriva.eval_judge import FreshJudge
 from heuriva.storage.sqlite import SQLiteStore
 
 DEFAULT_CORPUS_RESOURCE = "v04_eval_corpus.yaml"
 FRESH_LIVE_ENV = "HEURIVA_EVAL_SUITE_FRESH_LIVE"
+
+ALLOW_ENFORCE_CHECKS = (
+    PromotionCheckAdvice(
+        check_id="forbidden_search",
+        mode_advice="enforce_available",
+        rationale="Forced harness covers forbidden SEARCH guard; opt-in config only.",
+    ),
+    PromotionCheckAdvice(
+        check_id="duplicate_query",
+        mode_advice="enforce_available",
+        rationale="Forced harness covers duplicate query guard; opt-in config only.",
+    ),
+    PromotionCheckAdvice(
+        check_id="search_budget",
+        mode_advice="enforce_available",
+        rationale="Deterministic search budget guards are unit-tested; not default.",
+    ),
+    PromotionCheckAdvice(
+        check_id="bounded_completion_repair",
+        mode_advice="enforce_available",
+        rationale="Bounded completion repair in enforce mode is harness-covered.",
+    ),
+)
+
+KEEP_OBSERVE_CHECKS = (
+    PromotionCheckAdvice(
+        check_id="evidence_relevance_mode",
+        mode_advice="observe",
+        rationale="Semantic relevance enforce needs live corpus + judge review.",
+    ),
+    PromotionCheckAdvice(
+        check_id="completion_check_mode",
+        mode_advice="observe",
+        rationale=(
+            "Semantic completion enforce stays observe until live "
+            "disagreement rates are acceptable."
+        ),
+    ),
+    PromotionCheckAdvice(
+        check_id="fresh_judge_as_truth",
+        mode_advice="observe",
+        rationale="Fresh judge results are opt-in signals, never objective truth.",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +145,8 @@ class EvalSuiteReport:
     totals_by_evidence_level: dict[str, int] = field(default_factory=dict)
     aggregate_signals: dict[str, int] = field(default_factory=dict)
     promotion: PromotionStats | None = None
+    promotion_report: PromotionReport | None = None
+    verify_gate: VerifyGateReport | None = None
     disclaimer: str = (
         "Deterministic and fake-integration results are regression signals, "
         "not product proof of model correctness."
@@ -107,6 +162,36 @@ class EvalSuiteReport:
             "totals_by_evidence_level": self.totals_by_evidence_level,
             "aggregate_signals": self.aggregate_signals,
             "promotion": self.promotion.to_dict() if self.promotion else None,
+            "promotion_report": (
+                self.promotion_report.model_dump(mode="json") if self.promotion_report else None
+            ),
+            "verify_gate": self.verify_gate.model_dump(mode="json") if self.verify_gate else None,
+            "disclaimer": self.disclaimer,
+        }
+
+
+@dataclass(frozen=True)
+class JudgedEvaluationReport:
+    deterministic: TrajectoryEvaluationReport
+    judge: JudgeAssessment
+    disagreement: DisagreementReport
+    promotion: PromotionReport
+    verify_gate: VerifyGateReport
+    eval_run_id: str | None = None
+    disclaimer: str = (
+        "Fresh judge verdicts are opt-in model assessments with provenance. "
+        "They do not overwrite deterministic trajectory signals and are not "
+        "objective proof of answer correctness."
+    )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "deterministic": self.deterministic.to_dict(),
+            "judge": self.judge.model_dump(mode="json"),
+            "disagreement": self.disagreement.model_dump(mode="json"),
+            "promotion": self.promotion.model_dump(mode="json"),
+            "verify_gate": self.verify_gate.model_dump(mode="json"),
+            "eval_run_id": self.eval_run_id,
             "disclaimer": self.disclaimer,
         }
 
@@ -213,7 +298,13 @@ def run_eval_suite(
     fresh_live_enabled = (
         include_fresh_live if include_fresh_live is not None else _env_flag(FRESH_LIVE_ENV)
     )
-    store = SQLiteStore(Path(sqlite_path).expanduser()) if sqlite_path is not None else None
+    store: SQLiteStore | None = None
+    store_open_error: str | None = None
+    if sqlite_path is not None:
+        try:
+            store = SQLiteStore(Path(sqlite_path).expanduser())
+        except (OSError, RuntimeError, sqlite3.Error) as exc:
+            store_open_error = str(exc)
     results: list[EvalCaseResult] = []
     owned_workdir = workdir is None
     root = workdir or Path(tempfile.mkdtemp(prefix="heuriva-eval-suite-"))
@@ -227,6 +318,7 @@ def run_eval_suite(
                     workdir=case_dir,
                     store=store,
                     include_fresh_live=fresh_live_enabled,
+                    store_open_error=store_open_error,
                 )
             )
     finally:
@@ -235,6 +327,8 @@ def run_eval_suite(
             pass
 
     promotion = compute_promotion_stats(tuple(results))
+    promotion_report = build_promotion_report(stats=promotion)
+    verify_gate = compute_verify_gate(leak_task_ids=())
     return EvalSuiteReport(
         corpus_version=corpus.version,
         corpus_path=str(resolved_corpus_path),
@@ -244,7 +338,272 @@ def run_eval_suite(
         totals_by_evidence_level=_count_by(results, key=lambda item: item.evidence_level),
         aggregate_signals=_aggregate_signals(results),
         promotion=promotion,
+        promotion_report=promotion_report,
+        verify_gate=verify_gate,
     )
+
+
+def evaluate_with_judge(
+    data: dict[str, Any],
+    *,
+    judge: FreshJudge,
+    store: SQLiteStore | None = None,
+    persist: bool = True,
+    case_id: str | None = None,
+    prior_leak_task_ids: tuple[str, ...] = (),
+) -> JudgedEvaluationReport:
+    deterministic = evaluate_trajectory(data)
+    assessment = judge.judge(
+        trajectory_data=data,
+        deterministic=deterministic,
+        case_id=case_id,
+    )
+    disagreement = classify_disagreement(
+        deterministic_verdict=deterministic.completion_verdict,
+        judge=assessment,
+    )
+    promotion = build_promotion_report(
+        stats=None,
+        disagreement=disagreement,
+    )
+    leak_ids = list(prior_leak_task_ids)
+    if is_pipeline_leak(deterministic=deterministic, disagreement=disagreement):
+        if deterministic.task_id not in leak_ids:
+            leak_ids.append(deterministic.task_id)
+    verify_gate = compute_verify_gate(leak_task_ids=tuple(leak_ids))
+    eval_run_id: str | None = None
+    if persist and store is not None:
+        trajectory = data.get("trajectory", {})
+        eval_run_id = store.save_eval_run(
+            task_id=deterministic.task_id,
+            trajectory_id=(None if trajectory.get("id") is None else str(trajectory.get("id"))),
+            case_id=case_id,
+            judge_mode="fresh_judge",
+            deterministic_verdict=deterministic.completion_verdict,
+            judge_verdict=assessment.verdict.value,
+            disagreement_bucket=disagreement.bucket.value,
+            model=assessment.provenance.model,
+            prompt_version=assessment.provenance.prompt_version,
+            prompt_hash=assessment.provenance.prompt_hash,
+            provenance=assessment.provenance.model_dump(mode="json"),
+            result={
+                "deterministic": deterministic.to_dict(),
+                "judge": assessment.model_dump(mode="json"),
+                "disagreement": disagreement.model_dump(mode="json"),
+                "promotion": promotion.model_dump(mode="json"),
+                "verify_gate": verify_gate.model_dump(mode="json"),
+            },
+            failure_code=assessment.provenance.failure_code,
+        )
+    return JudgedEvaluationReport(
+        deterministic=deterministic,
+        judge=assessment,
+        disagreement=disagreement,
+        promotion=promotion,
+        verify_gate=verify_gate,
+        eval_run_id=eval_run_id,
+    )
+
+
+def classify_disagreement(
+    *,
+    deterministic_verdict: str,
+    judge: JudgeAssessment,
+) -> DisagreementReport:
+    judge_verdict = judge.verdict.value
+    if judge.verdict in {JudgeVerdict.PARSE_FAILURE, JudgeVerdict.ERROR, JudgeVerdict.NOT_RUN}:
+        return DisagreementReport(
+            bucket=DisagreementBucket.JUDGE_UNAVAILABLE,
+            deterministic_verdict=deterministic_verdict,
+            judge_verdict=judge_verdict,
+            notes="Judge unavailable or failed; manual_review_needed is not a fail.",
+        )
+    if judge.manual_review_needed or judge.verdict is JudgeVerdict.INSUFFICIENT_EVIDENCE:
+        return DisagreementReport(
+            bucket=DisagreementBucket.MANUAL_REVIEW_NEEDED,
+            deterministic_verdict=deterministic_verdict,
+            judge_verdict=judge_verdict,
+            notes="Manual review needed; this is a separate state, not an automatic fail.",
+        )
+    det = deterministic_verdict.strip().lower()
+    if det in {"not_assessed", "insufficient_evidence"} or det == judge_verdict:
+        return DisagreementReport(
+            bucket=DisagreementBucket.AGREE,
+            deterministic_verdict=deterministic_verdict,
+            judge_verdict=judge_verdict,
+            notes="Deterministic and judge signals align or cannot disagree usefully.",
+        )
+    if det == "pass" and judge.verdict is JudgeVerdict.FAIL:
+        return DisagreementReport(
+            bucket=DisagreementBucket.DETERMINISTIC_PASS_JUDGE_FAIL,
+            deterministic_verdict=deterministic_verdict,
+            judge_verdict=judge_verdict,
+            notes="Deterministic pass vs judge fail; not objective truth either way.",
+        )
+    if det == "fail" and judge.verdict is JudgeVerdict.PASS:
+        return DisagreementReport(
+            bucket=DisagreementBucket.DETERMINISTIC_FAIL_JUDGE_PASS,
+            deterministic_verdict=deterministic_verdict,
+            judge_verdict=judge_verdict,
+            notes="Deterministic fail vs judge pass; keep observe and review manually.",
+        )
+    return DisagreementReport(
+        bucket=DisagreementBucket.MANUAL_REVIEW_NEEDED,
+        deterministic_verdict=deterministic_verdict,
+        judge_verdict=judge_verdict,
+        notes="Non-binary disagreement requires manual review.",
+    )
+
+
+def is_pipeline_leak(
+    *,
+    deterministic: TrajectoryEvaluationReport,
+    disagreement: DisagreementReport,
+) -> bool:
+    return (
+        deterministic.citation_validation == "passed"
+        and deterministic.completion_verdict == "pass"
+        and disagreement.bucket is DisagreementBucket.DETERMINISTIC_PASS_JUDGE_FAIL
+    )
+
+
+def build_promotion_report(
+    *,
+    stats: PromotionStats | None = None,
+    disagreement: DisagreementReport | None = None,
+) -> PromotionReport:
+    if disagreement is not None and disagreement.bucket in {
+        DisagreementBucket.DETERMINISTIC_PASS_JUDGE_FAIL,
+        DisagreementBucket.DETERMINISTIC_FAIL_JUDGE_PASS,
+        DisagreementBucket.MANUAL_REVIEW_NEEDED,
+        DisagreementBucket.JUDGE_UNAVAILABLE,
+    }:
+        rationale = (
+            "Keep evidence_relevance_mode and completion_check_mode at observe. "
+            f"Disagreement bucket={disagreement.bucket.value}; fresh judge is not "
+            "permission for semantic enforce."
+        )
+        return PromotionReport(
+            recommend_enforce=False,
+            allow_enforce_checks=ALLOW_ENFORCE_CHECKS,
+            keep_observe_checks=KEEP_OBSERVE_CHECKS,
+            rationale=rationale,
+            disagreement_bucket=disagreement.bucket,
+        )
+    if stats is not None:
+        gate_met = (
+            stats.known_good_total >= 2
+            and stats.known_bad_total >= 1
+            and stats.false_positives == 0
+            and stats.false_negatives == 0
+            and stats.known_good_pass == stats.known_good_total
+            and stats.known_bad_pass == stats.known_bad_total
+        )
+        if gate_met:
+            rationale = (
+                "Deterministic/fake corpus shows zero FP/FN. Necessary but not "
+                "sufficient for semantic enforce; keep observe until live corpus "
+                "and judge disagreement rates are reviewed."
+            )
+        else:
+            rationale = stats.rationale
+        return PromotionReport(
+            recommend_enforce=False,
+            allow_enforce_checks=ALLOW_ENFORCE_CHECKS,
+            keep_observe_checks=KEEP_OBSERVE_CHECKS,
+            rationale=rationale,
+            disagreement_bucket=None if disagreement is None else disagreement.bucket,
+        )
+    return PromotionReport(
+        recommend_enforce=False,
+        allow_enforce_checks=ALLOW_ENFORCE_CHECKS,
+        keep_observe_checks=KEEP_OBSERVE_CHECKS,
+        rationale=(
+            "Default v0.5 policy: recommend_enforce stays false. Narrow "
+            "deterministic guards may be opted into locally; semantic checks stay observe."
+        ),
+        disagreement_bucket=None if disagreement is None else disagreement.bucket,
+    )
+
+
+def compute_verify_gate(*, leak_task_ids: tuple[str, ...]) -> VerifyGateReport:
+    distinct = tuple(dict.fromkeys(task_id for task_id in leak_task_ids if task_id))
+    has_two_tasks = len(distinct) >= 2
+    conditions = {
+        "at_least_two_distinct_live_leak_tasks": has_two_tasks,
+        "leak_not_fixable_by_contract_search_answer_or_repair": False,
+        "verify_io_cost_and_termination_specified": False,
+    }
+    enter = all(conditions.values())
+    if enter:
+        rationale = (
+            "VERIFY design gate conditions appear met; draft an ADR before adding "
+            "any default operator."
+        )
+    elif has_two_tasks:
+        rationale = (
+            f"Observed {len(distinct)} distinct leak task(s), but VERIFY still "
+            "requires proof that TaskContract/SEARCH/ANSWER/repair cannot fix the "
+            "failure and that VERIFY I/O, max calls, termination, and cost are testable."
+        )
+    else:
+        rationale = (
+            "VERIFY design gate not met. Need at least two distinct real tasks where "
+            "citation/relevance/completion pass yet the task still fails in a way "
+            "existing controls cannot fix. Do not add a default VERIFY operator."
+        )
+    return VerifyGateReport(
+        enter_verify_design=enter,
+        distinct_leak_task_count=len(distinct),
+        conditions_met=conditions,
+        rationale=rationale,
+    )
+
+
+def render_judged_report(report: JudgedEvaluationReport) -> str:
+    det = report.deterministic
+    judge = report.judge
+    lines = [
+        f"task_id: {det.task_id}",
+        f"status: {det.status}",
+        f"evidence_level: {det.evidence_level}",
+        f"deterministic_completion: {det.completion_verdict}",
+        f"citation_validation: {det.citation_validation}",
+        f"judge_verdict: {judge.verdict.value}",
+        f"judge_origin: {judge.assessment_origin}",
+        f"judge_model: {judge.provenance.model}",
+        f"judge_prompt_version: {judge.provenance.prompt_version}",
+        f"judge_prompt_hash: {judge.provenance.prompt_hash}",
+        f"judge_timestamp: {judge.provenance.timestamp}",
+        f"judge_call_count: {judge.provenance.call_count}",
+        f"disagreement: {report.disagreement.bucket.value}",
+        f"disagreement_notes: {report.disagreement.notes}",
+        f"promotion.recommend_enforce: {report.promotion.recommend_enforce}",
+        f"promotion.rationale: {report.promotion.rationale}",
+        "promotion.allow_enforce_checks:",
+    ]
+    for item in report.promotion.allow_enforce_checks:
+        lines.append(f"  - {item.check_id}: {item.mode_advice}")
+    lines.append("promotion.keep_observe_checks:")
+    for item in report.promotion.keep_observe_checks:
+        lines.append(f"  - {item.check_id}: {item.mode_advice}")
+    lines.extend(
+        [
+            f"verify_gate.enter_verify_design: {report.verify_gate.enter_verify_design}",
+            f"verify_gate.leak_tasks: {report.verify_gate.distinct_leak_task_count}",
+            f"verify_gate.rationale: {report.verify_gate.rationale}",
+            f"disclaimer: {report.disclaimer}",
+        ]
+    )
+    if report.eval_run_id:
+        lines.append(f"eval_run_id: {report.eval_run_id}")
+    if judge.reason:
+        lines.append(f"judge_reason: {judge.reason}")
+    if judge.failed_criteria:
+        lines.append(f"judge_failed_criteria: {', '.join(judge.failed_criteria)}")
+    if judge.provenance.failure_code:
+        lines.append(f"judge_failure_code: {judge.provenance.failure_code}")
+    return "\n".join(lines)
 
 
 def compute_promotion_stats(
@@ -333,6 +692,26 @@ def render_suite_report(report: EvalSuiteReport) -> str:
                 f"  rationale: {promo.rationale}",
             ]
         )
+    if report.promotion_report is not None:
+        advice = report.promotion_report
+        lines.append("promotion_report:")
+        lines.append(f"  recommend_enforce: {advice.recommend_enforce}")
+        lines.append("  allow_enforce_checks:")
+        for item in advice.allow_enforce_checks:
+            lines.append(f"    - {item.check_id}: {item.mode_advice}")
+        lines.append("  keep_observe_checks:")
+        for item in advice.keep_observe_checks:
+            lines.append(f"    - {item.check_id}: {item.mode_advice}")
+    if report.verify_gate is not None:
+        gate = report.verify_gate
+        lines.extend(
+            [
+                "verify_gate:",
+                f"  enter_verify_design: {gate.enter_verify_design}",
+                f"  distinct_leak_task_count: {gate.distinct_leak_task_count}",
+                f"  rationale: {gate.rationale}",
+            ]
+        )
     lines.append("cases:")
     for result in report.case_results:
         lines.append(
@@ -365,6 +744,7 @@ def _run_case(
     workdir: Path,
     store: SQLiteStore | None,
     include_fresh_live: bool,
+    store_open_error: str | None = None,
 ) -> EvalCaseResult:
     if case.evidence_level is EvidenceLevel.FRESH_LIVE and not include_fresh_live:
         return EvalCaseResult(
@@ -379,7 +759,11 @@ def _run_case(
         )
 
     if case.evidence_level is EvidenceLevel.STORED_LIVE:
-        return _run_stored_live_case(case, store=store)
+        return _run_stored_live_case(
+            case,
+            store=store,
+            store_open_error=store_open_error,
+        )
 
     if case.evidence_level is EvidenceLevel.FRESH_LIVE:
         return EvalCaseResult(
@@ -389,8 +773,9 @@ def _run_case(
             status=CaseResultStatus.SKIPPED.value,
             expected_quality_signal=case.expected_quality_signal,
             notes=(
-                "fresh_live opted in, but v0.4 does not auto-call live models; "
-                "record live evidence via ignored checklist and stored task IDs"
+                "fresh_live opted in, but v0.5 still does not auto-call live models "
+                "from eval-suite; use `heuriva eval --judge <task_id>` for opt-in "
+                "fresh judging of a saved trajectory"
             ),
             is_product_proof=False,
         )
@@ -410,7 +795,12 @@ def _run_case(
     return _score_harness_case(case, outcome)
 
 
-def _run_stored_live_case(case: EvalCorpusCase, *, store: SQLiteStore | None) -> EvalCaseResult:
+def _run_stored_live_case(
+    case: EvalCorpusCase,
+    *,
+    store: SQLiteStore | None,
+    store_open_error: str | None = None,
+) -> EvalCaseResult:
     if not case.task_id:
         return EvalCaseResult(
             case_id=case.id,
@@ -422,6 +812,9 @@ def _run_stored_live_case(case: EvalCorpusCase, *, store: SQLiteStore | None) ->
             is_product_proof=False,
         )
     if store is None:
+        notes = "no sqlite path provided for stored_live summary"
+        if store_open_error:
+            notes = f"sqlite store unavailable for stored_live summary: {store_open_error}"
         return EvalCaseResult(
             case_id=case.id,
             kind=case.kind.value,
@@ -429,7 +822,7 @@ def _run_stored_live_case(case: EvalCorpusCase, *, store: SQLiteStore | None) ->
             status=CaseResultStatus.MISSING.value,
             task_id=case.task_id,
             expected_quality_signal=case.expected_quality_signal,
-            notes="no sqlite path provided for stored_live summary",
+            notes=notes,
             is_product_proof=False,
         )
     try:
