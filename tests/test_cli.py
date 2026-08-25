@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
+from heuriva import __version__
 from heuriva.cli import app
 from heuriva.core.common import utc_now
 from heuriva.core.state import CognitiveState
@@ -23,6 +24,13 @@ def test_cli_help() -> None:
     assert "run" in result.stdout
 
 
+def test_cli_version() -> None:
+    result = CliRunner().invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"Heuriva {__version__}"
+
+
 def test_cli_setup_and_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
@@ -33,6 +41,7 @@ def test_cli_setup_and_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert setup.exit_code == 0
     assert "Created" in setup.stderr
     assert doctor.exit_code == 0
+    assert f"Version: {__version__}" in doctor.stderr
     assert "SQLite schema" in doctor.stderr
 
 

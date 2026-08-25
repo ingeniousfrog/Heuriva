@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from heuriva import __version__
 from heuriva.clients.model import ModelClient
 from heuriva.clients.search import SearchClient
 from heuriva.config import api_key_for, load_config, setup_config
@@ -30,7 +31,11 @@ MAX_DOCTOR_PROBE_TIMEOUT_SECONDS = 600.0
 def root(
     ctx: typer.Context,
     trace: Annotated[bool, typer.Option("--trace", help="Show detailed per-step trace.")] = False,
+    version: Annotated[bool, typer.Option("--version", help="Show version and exit.")] = False,
 ) -> None:
+    if version:
+        typer.echo(f"Heuriva {__version__}")
+        raise typer.Exit()
     if ctx.invoked_subcommand is None:
         _repl(trace=trace)
 
@@ -79,6 +84,7 @@ def doctor(
     except Exception as exc:
         typer.echo(f"Configuration error: {exc}", err=True)
         raise typer.Exit(2) from exc
+    typer.echo(f"Version: {__version__}", err=True)
     for line in collect_diagnostics(config).lines():
         typer.echo(line, err=True)
     read_timeout_seconds = probe_timeout or min(

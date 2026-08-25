@@ -1,6 +1,6 @@
 # Heuriva
 
-**Last Updated:** 2026-08-24
+**Last Updated:** 2026-08-25
 
 [中文文档](README-CN.md)
 
@@ -10,6 +10,10 @@ explain, recover, and verify: the runtime tracks material state progress, guards
 low-progress loops, validates evidence citations in final answers, and records
 richer diagnostics in the local trajectory store.
 
+v0.2.1 is a small polish release: CLI version visibility is available through
+`heuriva --version` and `heuriva doctor`, and controller drafts now normalize a
+single string `success_criteria` into a one-item list before validation.
+
 ## Current Status
 
 Implemented in this repository:
@@ -17,10 +21,12 @@ Implemented in this repository:
 - Python package with `heuriva` CLI entry point
 - `heuriva setup`, `heuriva doctor`, `heuriva run`, interactive `heuriva`, and
   `heuriva show`
+- Version visibility through `heuriva --version` and `heuriva doctor`
 - Local config under `~/.heuriva/`
 - OpenAI-compatible non-streaming `/v1/chat/completions` client
 - v0.1 operators: `ANALYZE`, `SEARCH`, `ANSWER`
-- LLM controller with structured JSON validation and one repair attempt
+- LLM controller with structured JSON validation, `success_criteria`
+  normalization, and one repair attempt
 - Deterministic executor router that keeps operator selection separate from
   executor selection
 - LLM and search executors
@@ -66,6 +72,7 @@ SQLite uses Python's standard library `sqlite3`.
 Create local config:
 
 ```bash
+heuriva --version
 heuriva setup
 ```
 
@@ -209,18 +216,20 @@ Automated checks used for this implementation:
 
 The fake test suite covers schema immutability, config precedence, redaction,
 OpenAI-compatible client response handling, controller malformed JSON repair,
-router separation, state patch application, SQLite rollback, CLI setup/doctor,
-live run progress on stderr without polluting JSON stdout, loop guard behavior,
-state delta rendering, citation validation and repair, model retry accounting,
-search timeout classification, stale task diagnostics, and dynamic runtime paths
+controller `success_criteria` normalization, router separation, state patch
+application, SQLite rollback, CLI setup/doctor, live run progress on stderr
+without polluting JSON stdout, loop guard behavior, state delta rendering,
+citation validation and repair, model retry accounting, search timeout
+classification, stale task diagnostics, and dynamic runtime paths
 including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
 `SEARCH -> ANSWER(validation error) -> ANSWER`.
 
 Live verification should be recorded separately:
 
 ```bash
-HEURIVA_RUN_LIVE_LLM_TESTS=1 heuriva doctor --probe --probe-timeout 30
-HEURIVA_RUN_LIVE_SEARCH_TESTS=1 heuriva run --trace "..."
+heuriva doctor --probe --probe-timeout 30
+HEURIVA_RUN_LIVE_LLM_TESTS=1 .venv/bin/pytest tests/live/test_live_llm.py
+HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 ```
 
 A successful small `doctor --probe` confirms only the minimal protocol path. It
@@ -228,9 +237,4 @@ does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
 
-The pytest live smoke files are also opt-in:
-
-```bash
-HEURIVA_RUN_LIVE_LLM_TESTS=1 .venv/bin/pytest tests/live/test_live_llm.py
-HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
-```
+The pytest live smoke files are opt-in and remain skipped by default.

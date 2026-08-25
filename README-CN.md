@@ -1,12 +1,14 @@
 # Heuriva
 
-**最后更新：** 2026-08-24
+**最后更新：** 2026-08-25
 
 [English README](README.md)
 
 Heuriva 是一个 Python CLI 形态的认知运行时，用来观察一个冻结权重的语言模型在显式状态、动态操作选择和可持久化轨迹帮助下，如何一步一步解决任务。
 
 v0.2 保留 v0.1 的三操作 runtime，同时把重点推进到“更可解释、可恢复、可验证”：runtime 会判断每一步是否产生实质状态进展，会对低进展循环做确定性 guard，最终答案会用本地已保存 evidence 标签做 citation 校验，失败和诊断信息也会更清楚地落到轨迹里。
+
+v0.2.1 是一个小 polish：`heuriva --version` 和 `heuriva doctor` 会显示版本；controller draft 会把单个字符串形式的 `success_criteria` 规范化成单元素列表，再进入结构化校验。
 
 Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK，而是证明一条可检查的最小闭环：
 
@@ -22,10 +24,11 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 
 - Python package 与 `heuriva` CLI 入口
 - `heuriva setup`、`heuriva doctor`、`heuriva run`、交互式 `heuriva`、`heuriva show`
+- 通过 `heuriva --version` 和 `heuriva doctor` 查看版本
 - `~/.heuriva/` 下的本地配置
 - OpenAI-compatible 非流式 `/v1/chat/completions` client
 - v0.1 三个认知操作：`ANALYZE`、`SEARCH`、`ANSWER`
-- LLM controller 的结构化 JSON 校验和一次修复重试
+- LLM controller 的结构化 JSON 校验、`success_criteria` 规范化和一次修复重试
 - 确定性 `ExecutorRouter`，把 operator 选择和 executor 选择分开
 - LLM executor 和 search executor
 - 基于 Pydantic v2 的不可变核心 schema
@@ -117,6 +120,7 @@ python3 -m venv .venv
 创建本地配置：
 
 ```bash
+heuriva --version
 heuriva setup
 ```
 
@@ -240,7 +244,7 @@ ANSWER  -> llm
 .venv/bin/python -m hatchling build
 ```
 
-自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断，以及多条 fake runtime 路径：
+自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断，以及多条 fake runtime 路径：
 
 - `ANALYZE -> SEARCH -> ANSWER`
 - `ANALYZE -> ANSWER`
@@ -259,14 +263,14 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.2 已完成代码实现和默认自动化验证。下一步更适合补独立 live 验收，而不是急着扩展新 operator。
+v0.2.1 后，下一步更适合补负向边界和控制器稳定性，而不是急着扩展新 operator。
 
 优先级最高的是：
 
-1. 用真实 Cursor-compatible endpoint 跑一次多步任务，确认 trace 中出现 material state delta。
-2. 跑一次真实搜索任务，确认 final answer 的 `[S1]` 标签、`show --json` citation 和 state evidence URL 能对账。
-3. 人工构造重复 `ANALYZE` 或无进展路径，确认 `loop_guard_applied` 对普通用户可见。
-4. 复测慢 endpoint、坏 endpoint、search timeout 和 Ctrl+C，确认状态、退出码、task ID 和底层原因都可恢复检查。
+1. 复测 search timeout 和 retry exhausted，确认状态、退出码、task ID 和底层原因都可恢复检查。
+2. 继续观察 live controller 是否还出现 `controller_parse_error`，尤其是 repair 前后 operator/objective 是否漂移。
+3. 明确 stale running task 的处理策略：只诊断、手动 mark-interrupted，还是后续自动恢复。
+4. 改善 search relevance 和 success criteria 判定，避免“引用对账通过但任务没真正满足”。
 5. 若至少两个真实任务在 citation validator 通过后仍稳定不满足 success criteria，再讨论后续 `VERIFY` 设计。
 
 一句话：v0.2 先把“可解释、可恢复、可验证”做扎实；学习、多 Agent 或新的 operator 仍应等 evaluation 证据之后再做。

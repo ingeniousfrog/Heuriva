@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 
 from heuriva.controller.llm_controller import LLMController
-from heuriva.core.decision import DecisionDraft, SearchParams, bind_decision
+from heuriva.core.decision import (
+    DecisionDraft,
+    SearchParams,
+    bind_decision,
+    normalize_draft_payload,
+)
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState
 from heuriva.testing.fakes import QueueModelClient
@@ -42,6 +47,51 @@ def test_decision_binds_runtime_fields_after_validation() -> None:
     assert decision.step_index == state.step_index
     assert decision.policy_refs == ()
     assert not hasattr(decision, "executor_kind")
+
+
+def test_decision_normalizes_single_success_criterion_string() -> None:
+    draft = DecisionDraft.model_validate(
+        normalize_draft_payload(
+            {
+                "operator": "ANSWER",
+                "objective": "answer now",
+                "reason": "enough information",
+                "success_criteria": "final answer",
+                "params": {},
+                "confidence": 0.8,
+            }
+        )
+    )
+
+    assert draft.success_criteria == ("final answer",)
+
+
+def test_controller_accepts_string_success_criteria_without_repair_event() -> None:
+    state = CognitiveState.new(task_id="task-1", goal="Explain")
+    model = QueueModelClient(
+        [
+            {
+                "operator": "ANSWER",
+                "objective": "answer now",
+                "reason": "enough information",
+                "success_criteria": "final answer",
+                "params": {},
+                "confidence": 0.8,
+            },
+        ]
+    )
+    controller = LLMController(model_client=model)
+
+    decision, events = controller.select(
+        state=state,
+        available_operators=(Operator.ANALYZE, Operator.ANSWER),
+        runtime_limits={"max_steps": 2},
+    )
+
+    assert decision.operator is Operator.ANSWER
+    assert decision.success_criteria == ("final answer",)
+    assert events == []
+    assert len(model.calls) == 1
 
 
 def test_controller_repairs_malformed_json_once() -> None:

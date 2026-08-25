@@ -97,6 +97,9 @@ class Decision(BaseModel):
 
 def normalize_draft_payload(payload: dict[str, Any]) -> dict[str, Any]:
     copied = dict(payload)
+    criteria = copied.get("success_criteria")
+    if isinstance(criteria, str):
+        copied["success_criteria"] = [criteria]
     raw_operator = copied.get("operator")
     if not isinstance(raw_operator, str):
         raise ValueError("operator must be a string")
