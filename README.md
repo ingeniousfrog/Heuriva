@@ -349,10 +349,10 @@ The pytest live smoke files are opt-in and remain skipped by default. v0.7 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.
 
-## Planned Next
+## Planned Next: v0.8
 
-v0.7 Narrow Completion Lexicon is implemented. Defaults remain `observe`; no
-VERIFY operator ships by default. Revisit VERIFY only after adequate contracts
-and lexicon still leave ≥2 distinct non-repairable live leaks (see local
-`plan.md` §54 / §68 and `docs/promotion-rules-v0.7.md` on a development
-checkout).
+v0.7 Narrow Completion Lexicon is implemented. The next planned product version
+is a **local read-only Trajectory Browser** (`heuriva serve`-style) for
+inspecting tasks, citations, contracts, and eval_runs — not VERIFY and not a
+remote dashboard. See local `plan.md` §70–§75 and `docs/roadmap-v0.8.md`.
+Citation validation already exists; VERIFY remains closed until §54 is met.

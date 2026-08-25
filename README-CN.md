@@ -317,10 +317,15 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.7 Narrow Completion Lexicon 已落地。默认仍是 observe，不默认打开 VERIFY。只有在合同 + lexicon 之后仍有 ≥2 个不可修复真实 leak 时，再讨论 VERIFY；默认 semantic enforce 仍受 §54 约束（见本地 `plan.md` §54 / §68 与 `docs/promotion-rules-v0.7.md`）。
+v0.7 已落地。下一产品版本规划为 **v0.8 Local Trajectory Browser**（本机只读 Web 检视面，见本地 `plan.md` §70–§75 与 `docs/roadmap-v0.8.md`）：方便看轨迹 / citation / contract / eval_runs，**不是**远程 dashboard，也**不是** VERIFY。
+
+提醒：
+
+- **Citation**（`[S1]` 校验）很早已经实现，不要再当成缺口。
+- **VERIFY** 仍因 §54 证据不足保持关闭；UI 只帮助复盘，不降低开闸门槛。
 
 优先级：
 
-1. 在 **8765** 上完成 v0.7 live checklist（新 run 的中文质量词合同样本）。
-2. 词表只做有证据的有界扩展，并带 harness；禁止扩成隐性语义引擎。
-3. 存盘 det 可能滞后于当前 lexicon；开闸以新 run / harness 为准。
+1. 实现 localhost 只读 `serve`/`ui` + 列表/详情。
+2. 验收时确认不写 `trajectory_steps`、默认不调模型。
+3. VERIFY / 默认 enforce 仍按 §54，不绑进 v0.8 必达。
