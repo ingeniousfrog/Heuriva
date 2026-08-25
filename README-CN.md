@@ -268,13 +268,13 @@ v0.3 的 SEARCH decision 需要带 `query`、`evidence_need`、`expected_signal`
 .venv/bin/heuriva eval --help
 ```
 
-自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、常见中英文 criterion 匹配、只读 eval 输出，以及多条 fake runtime 路径：
+自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、bounded completion repair、常见中英文 criterion 匹配、只读 eval 输出，以及多条 fake runtime 路径：
 
 - `ANALYZE -> SEARCH -> ANSWER`
 - `ANALYZE -> ANSWER`
 - `SEARCH -> ANSWER(validation error) -> ANSWER`
 
-当前自动化结果为 64 passed、2 skipped live tests，总覆盖率 87%。这证明 v0.3 机制在 fake model/search 和只读 trajectory 下可运行，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
+当前自动化结果为 65 passed、2 skipped live tests，总覆盖率 87%。这证明 v0.3 机制在 fake model/search 和只读 trajectory 下可运行，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
 
 真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 

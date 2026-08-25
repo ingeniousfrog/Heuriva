@@ -271,11 +271,12 @@ without polluting JSON stdout, loop guard behavior, state delta rendering,
 citation validation and repair, model retry accounting, search timeout
 classification, stale task diagnostics, task contracts, search guards, evidence
 relevance accounting, non-duplicated eval evidence counts, completion enforce
-mode, common Chinese/English criterion matching, read-only eval output, and
-dynamic runtime paths including `ANALYZE -> SEARCH -> ANSWER`,
-`ANALYZE -> ANSWER`, and `SEARCH -> ANSWER(validation error) -> ANSWER`.
+mode, bounded completion repair, common Chinese/English criterion matching,
+read-only eval output, and dynamic runtime paths including
+`ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
+`SEARCH -> ANSWER(validation error) -> ANSWER`.
 
-The current automated suite reports 64 passed and 2 skipped live tests, with
+The current automated suite reports 65 passed and 2 skipped live tests, with
 87% total coverage. The 0.3.0 wheel and sdist build locally.
 
 Live verification should be recorded separately:

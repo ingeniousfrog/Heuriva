@@ -254,6 +254,49 @@ def test_completion_enforce_blocks_done_when_task_contract_is_unmet(tmp_path: Pa
     assert [event["event_type"] for event in data["events"]] == ["completion_assessed"]
 
 
+def test_completion_enforce_allows_bounded_repair(tmp_path: Path) -> None:
+    class RepairingAnswerExecutor:
+        def __init__(self) -> None:
+            self.answers = ["A short answer", "A safe answer that mentions safety"]
+            self.calls = 0
+
+        def execute(self, decision: Decision, state: CognitiveState) -> OperationResult:
+            del decision, state
+            answer = self.answers[self.calls]
+            self.calls += 1
+            return OperationResult(content=answer, final_answer=answer)
+
+    store = SQLiteStore(tmp_path / "memory.db")
+    config = AppConfig.model_validate(
+        {
+            "quality": {"completion_check_mode": "enforce", "max_completion_repairs": 1},
+            "storage": {"sqlite_path": str(tmp_path / "memory.db")},
+        }
+    )
+    executor = RepairingAnswerExecutor()
+    engine = RuntimeEngine(
+        config=config,
+        store=store,
+        controller=FakeController(
+            [
+                make_answer_decision("First answer"),
+                make_answer_decision("Repair answer"),
+            ]
+        ),
+        executors={Operator.ANSWER: executor},
+    )
+
+    result = engine.run("Explain safety", criteria=("mention safety",))
+    data = store.get_trajectory(result.task_id)
+
+    assert result.status == "done"
+    assert result.final_answer == "A safe answer that mentions safety"
+    assert executor.calls == 2
+    assert data["steps"][0]["observation"]["error"]["code"] == ("completion_validation_error")
+    assert data["steps"][0]["observation"]["error"]["retryable"] is True
+    assert data["steps"][1]["observation"]["metadata"]["completion_assessment"]["verdict"] == "pass"
+
+
 def test_completion_assessment_matches_common_chinese_equivalents() -> None:
     config = QualityConfig.model_validate({"completion_check_mode": "observe"})
     validator = CompletionValidator(config)
