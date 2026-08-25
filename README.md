@@ -17,10 +17,12 @@ remain regression signals, not product proof.
 ## Current Status
 
 Release status: v0.5 implements opt-in fresh judging and promotion/VERIFY gate
-reports on top of the v0.4 corpus/suite. Quality modes stay at `observe` by
-default; see the local promotion notes under `docs/` on a development checkout.
-Live checklists remain local-only and ignored by Git because they contain
-machine-specific task IDs.
+reports on top of the v0.4 corpus/suite. Post-v0.5 local live evidence (ignored
+checklists under `docs/`) accumulated disagreement samples and kept both
+`recommend_enforce` and `enter_verify_design` false. Quality modes stay at
+`observe` by default; see the local promotion notes under `docs/` on a
+development checkout. Live checklists remain local-only and ignored by Git
+because they contain machine-specific task IDs.
 
 Implemented in this repository:
 
@@ -77,7 +79,8 @@ Not implemented:
 - Learning policies, policy lifecycle, replay, dashboard, MCP,
   shell/filesystem/Python executors, multi-agent workflows, URL crawling, daemon
   mode, task resume, or concurrent queues
-- A separate `VERIFY` operator (design gate remains unmet by default)
+- A separate `VERIFY` operator (design gate remains unmet; post-v0.5 live
+  evidence found fewer than two non-contract-repairable leak tasks)
 - Default semantic enforce; promotion rules keep quality modes at `observe`
   until live corpus evidence justifies a narrower change
 - Default fresh judging; `--judge` is always explicit opt-in
@@ -334,3 +337,12 @@ default quick probe timeout to return its first token.
 The pytest live smoke files are opt-in and remain skipped by default. v0.5 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.
+
+## Planned Next: v0.6
+
+Post-v0.5 evidence kept enforce/VERIFY gates closed. The next planned product
+version is **Task Contract Fidelity** (structured criteria such as
+`exact_answer` / `must_not_include`) so contract-design noise is not mistaken
+for VERIFY leaks. See local `plan.md` §55–§59 and `docs/roadmap-v0.6.md` on a
+development checkout. Defaults remain `observe`; no VERIFY operator is planned
+as a v0.6 default.

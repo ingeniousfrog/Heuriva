@@ -22,7 +22,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 
 ## 当前状态
 
-发布定性：v0.5 在 v0.4 corpus/suite 之上实现了受控 fresh judging 与 promotion/VERIFY gate 报告。默认 quality mode 仍是 `observe`；本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
+发布定性：v0.5 在 v0.4 corpus/suite 之上实现了受控 fresh judging 与 promotion/VERIFY gate 报告。Post-v0.5 已在本地 ignored checklist 中积累 live disagreement 证据，结论仍是 `recommend_enforce=false`、`enter_verify_design=false`。默认 quality mode 仍是 `observe`；本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
 
 这个仓库当前已经实现：
 
@@ -58,7 +58,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - shell/filesystem/Python executor、URL crawling
 - daemon、任务恢复、并发队列
 - provider-specific model client
-- 独立 `VERIFY` operator（设计门槛默认仍未满足）
+- 独立 `VERIFY` operator（设计门槛仍未满足；Post-v0.5 live 证据未达到 ≥2 个不可用 TaskContract 修复的 leak）
 - 默认启用 fresh judge；`--judge` 必须显式 opt-in
 - 默认 semantic enforce；promotion 规则要求在 live corpus 证据足够前保持 `observe`
 
@@ -309,14 +309,13 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.5 已把受控 fresh judging 与 promotion/VERIFY gate 落地。下一步应积累 live 证据，而不是急着扩展新 operator。
+Post-v0.5 已完成；开闸结论仍是 observe 默认、VERIFY 关闭。下一产品版本是 **v0.6 Task Contract Fidelity**（规划中，见本地 `plan.md` §55–§59 与 `docs/roadmap-v0.6.md`）：用结构化 criterion（如 `exact_answer` / `must_not_include`）消掉合同噪声，而不是急着加 VERIFY。
 
-优先级最高的是：
+优先级：
 
-1. 在 ignored v0.5 checklist 里记录真实 Cursor-compatible endpoint task IDs。
-2. 对 saved live trajectories 跑 `heuriva eval --judge`，保存 disagreement 与 eval_run。
-3. 用 stored-live corpus overlay 汇总本机 live trajectories。
-4. 只有在 live corpus 与 disagreement 比率可接受时，再考虑局部 semantic enforce。
-5. 只有当至少两个真实任务在 citation/relevance/completion pipeline 后仍稳定漏判，且 TaskContract/SEARCH/ANSWER/repair 无法修复时，再讨论 `VERIFY` 设计。
+1. 实现并向后兼容落地结构化 TaskContract / criterion kinds。
+2. 离线 harness 覆盖 exact_answer 多余文本失败等回归。
+3. 在 **8765** Cursor-compatible endpoint 上做 v0.6 live checklist。
+4. 只有在合同层已充分、且仍有 ≥2 个不可修复真实 leak 时，再讨论 VERIFY；默认 semantic enforce 仍受 §54 约束。
 
-一句话：v0.5 先把“judge 可复验、可对照、不改写历史”做扎实；学习、多 Agent 或新的 operator 仍应等真实 evaluation 证据之后再做。
+一句话：先把任务合同做准，再谈更严质量模式或新 operator。
