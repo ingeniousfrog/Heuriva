@@ -1,4 +1,4 @@
-version: "0.6"
+version: "0.7"
 cases:
   - id: forbidden_search_guard
     kind: known_good
@@ -118,6 +118,18 @@ cases:
     expected:
       status: done
       completion_verdict: pass
+
+  - id: cn_safety_tradeoffs_lexicon
+    kind: known_good
+    evidence_level: fake_integration
+    prompt: "Give a short answer about a safety-sensitive product decision."
+    criteria: ["mention safety", "mention tradeoffs"]
+    harness: cn_safety_tradeoffs_lexicon
+    expected_quality_signal: "shared lexicon matches CN safety/tradeoff wording (8e45ed21 class)"
+    expected:
+      status: done
+      completion_verdict: pass
+    notes: "Locks narrow lexicon fidelity; not semantic enforce and not VERIFY evidence."
 
   - id: stored_live_relevance_readback
     kind: known_good

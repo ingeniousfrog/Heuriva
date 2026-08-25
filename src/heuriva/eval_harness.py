@@ -290,6 +290,30 @@ def harness_legacy_string_criterion(workdir: Path) -> HarnessOutcome:
     return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
 
 
+def harness_cn_safety_tradeoffs_lexicon(workdir: Path) -> HarnessOutcome:
+    """Lock Post-v0.5 reverse-conflict class: CN semantic answer must_include pass."""
+    chinese_answer = (
+        "结论：有条件做——默认限制，硬边界不可配置掉。"
+        "主风险是功能被滥用后造成不可逆伤害（尤其未成年人与法规红线），因此默认限制。"
+        "主要代价是转化下降与摩擦增加；换来的是合规与长期信任。权衡上漏放比误杀更糟。"
+    )
+    store = SQLiteStore(workdir / "memory.db")
+    engine = RuntimeEngine(
+        config=_config(
+            workdir,
+            quality={"completion_check_mode": "observe"},
+        ),
+        store=store,
+        controller=FakeController([make_answer_decision("Answer")]),
+        executors={Operator.ANSWER: FakeExecutor("final", final_answer=chinese_answer)},
+    )
+    result = engine.run(
+        "Give a short answer about a safety-sensitive product decision.",
+        criteria=("mention safety", "mention tradeoffs"),
+    )
+    return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
+
+
 def harness_cited_but_off_task(workdir: Path) -> HarnessOutcome:
     from heuriva.runtime.answer_validation import validate_answer_citations
 
@@ -450,6 +474,7 @@ HARNESSES: dict[str, HarnessFn] = {
     "exact_answer_extra_text": harness_exact_answer_extra_text,
     "must_not_include": harness_must_not_include,
     "legacy_string_criterion": harness_legacy_string_criterion,
+    "cn_safety_tradeoffs_lexicon": harness_cn_safety_tradeoffs_lexicon,
 }
 
 

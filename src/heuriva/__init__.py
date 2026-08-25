@@ -1,5 +1,5 @@
-"""Heuriva v0.6 cognitive runtime."""
+"""Heuriva v0.7 cognitive runtime."""
 
 __all__ = ["__version__"]
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

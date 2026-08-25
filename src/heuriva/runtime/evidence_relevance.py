@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -9,37 +8,11 @@ from heuriva.core.decision import Decision, SearchParams
 from heuriva.core.evaluation import CandidateAssessment, RelevanceVerdict
 from heuriva.core.observation import SourceRef
 from heuriva.core.state import CognitiveState, EvidenceItem
-
-STOP_WORDS = {
-    "about",
-    "after",
-    "again",
-    "also",
-    "answer",
-    "could",
-    "details",
-    "evidence",
-    "explain",
-    "external",
-    "find",
-    "from",
-    "have",
-    "into",
-    "need",
-    "needed",
-    "release",
-    "search",
-    "signal",
-    "source",
-    "support",
-    "supporting",
-    "that",
-    "the",
-    "this",
-    "version",
-    "what",
-    "with",
-}
+from heuriva.runtime.quality_lexicon import (
+    RELEVANCE_STOP_WORDS,
+    expand_criterion_terms,
+    expand_text_terms,
+)
 
 
 @dataclass(frozen=True)
@@ -179,20 +152,8 @@ def _quality_terms(state: CognitiveState, params: SearchParams) -> tuple[str, ..
             params.expected_signal,
         )
     )
-    terms: list[str] = []
-    for term in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]{2,}", text.lower()):
-        if term not in STOP_WORDS and term not in terms:
-            terms.append(term)
-    return tuple(terms)
+    return expand_text_terms(text, stop_words=RELEVANCE_STOP_WORDS)
 
 
 def _criterion_has_match(criterion: str, haystack: str) -> bool:
-    return any(term in haystack for term in _criterion_terms(criterion))
-
-
-def _criterion_terms(criterion: str) -> tuple[str, ...]:
-    return tuple(
-        term
-        for term in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]{2,}", criterion.lower())
-        if term not in STOP_WORDS
-    )
+    return any(term in haystack for term in expand_criterion_terms(criterion))

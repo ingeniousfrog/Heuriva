@@ -21,7 +21,7 @@ def test_v04_corpus_schema_rejects_unknown_fields() -> None:
     payload = yaml.safe_load(FIXTURE_CORPUS.read_text(encoding="utf-8"))
     corpus = EvalCorpus.model_validate(payload)
 
-    assert corpus.version == "0.6"
+    assert corpus.version == "0.7"
     assert {case.evidence_level for case in corpus.cases} == {
         EvidenceLevel.SYNTHETIC,
         EvidenceLevel.FAKE_INTEGRATION,
@@ -61,10 +61,11 @@ def test_eval_suite_runs_deterministic_and_fake_cases_offline(tmp_path: Path) ->
     assert by_id["exact_answer_extra_text"].status == "pass"
     assert by_id["must_not_include"].status == "pass"
     assert by_id["legacy_string_criterion"].status == "pass"
+    assert by_id["cn_safety_tradeoffs_lexicon"].status == "pass"
     assert by_id["stored_live_relevance_readback"].status == "missing"
     assert by_id["fresh_live_opt_in"].status == "skipped"
     assert report.totals_by_status.get("fail", 0) == 0
-    assert report.totals_by_status.get("pass", 0) == 10
+    assert report.totals_by_status.get("pass", 0) == 11
     assert report.promotion is not None
     assert report.promotion.recommend_enforce is False
     assert report.verify_gate is not None
@@ -156,7 +157,7 @@ def test_cli_eval_suite_json_is_single_object(
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["corpus_version"] == "0.6"
+    assert payload["corpus_version"] == "0.7"
     assert payload["totals_by_status"]["pass"] >= 7
     assert payload["promotion"]["recommend_enforce"] is False
     assert "product proof" in payload["disclaimer"]
@@ -188,7 +189,8 @@ def test_cli_eval_suite_honors_fresh_live_env(
 
 def test_default_packaged_corpus_loads() -> None:
     corpus, path = load_eval_corpus()
-    assert corpus.version == "0.6"
+    assert corpus.version == "0.7"
     assert path.name == "v04_eval_corpus.yaml"
     assert any(case.harness == "forbidden_search_guard" for case in corpus.cases)
     assert any(case.harness == "judge_manual_review_needed" for case in corpus.cases)
+    assert any(case.harness == "cn_safety_tradeoffs_lexicon" for case in corpus.cases)

@@ -6,9 +6,9 @@
 
 Heuriva 是一个 Python CLI 形态的认知运行时，用来观察一个冻结权重的语言模型在显式状态、动态操作选择和可持久化轨迹帮助下，如何一步一步解决任务。
 
-v0.6 在 v0.5 judging/suite 栈之上增加 **Task Contract Fidelity**：结构化 criterion kinds（`must_include` / `must_not_include` / `exact_answer`），并保持旧版裸字符串 `--criterion` 兼容，让 deterministic completion 能抓住原先被误当成 pipeline leak 的合同噪声。
+v0.7 在 v0.6 Task Contract Fidelity 之上增加 **Narrow Completion Lexicon**：共享、表驱动的中英质量词扩展，用于 deterministic completion（并对齐 relevance 匹配），用离线 harness 锁住关键词 FN 回潮。
 
-v0.6 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
+v0.7 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
 
 Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK，而是证明一条可检查的最小闭环：
 
@@ -20,10 +20,11 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - v0.3 质量信号可以通过 corpus 与 `eval-suite` 跨 case 复验。
 - v0.5 可对 saved trajectory 做显式 opt-in fresh judging，并报告 disagreement。
 - v0.6 可用结构化 TaskContract 声明精确完成合同，并在 ANSWER / assessor 两侧保持一致。
+- v0.7 用共享 lexicon 让中英质量词匹配可回归，且不等于默认 semantic enforce。
 
 ## 当前状态
 
-发布定性：v0.6 实现了结构化 TaskContract criteria，以及 exact-answer / must-not-include / legacy-string 的离线 harness 覆盖。默认 quality mode 仍是 `observe`；`recommend_enforce` 与 `enter_verify_design` 仍为 false，除非 §54 门槛被单独满足并记录。本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
+发布定性：v0.7 实现了共享 quality lexicon，以及中文 safety/tradeoffs known-good harness。默认 quality mode 仍是 `observe`；`recommend_enforce` 与 `enter_verify_design` 仍为 false，除非 §54 门槛被单独满足并记录。本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
 
 这个仓库当前已经实现：
 
@@ -33,7 +34,8 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 显式 opt-in 的 `heuriva eval --judge`：带 provenance、disagreement bucket、promotion 建议、VERIFY gate；eval run 与 trajectory 分表保存
 - 默认离线的 `heuriva eval-suite` / `heuriva eval-suite --json`
 - 跨 case 聚合报告：pass/fail/missing/skipped、evidence level 分层、search/citation/completion 汇总、promotion 统计与 VERIFY gate
-- forced harness：forbidden-search、duplicate-query、enforce block、bounded repair、citation 与 completion 分离、`exact_answer` 多余文本、`must_not_include`、legacy 字符串 criterion 兼容
+- forced harness：forbidden-search、duplicate-query、enforce block、bounded repair、citation 与 completion 分离、`exact_answer` 多余文本、`must_not_include`、legacy 字符串 criterion 兼容、中文 safety/tradeoffs lexicon
+- 共享窄域 quality lexicon（completion 与 relevance 共用扩展）
 - 结构化 task criteria：`must_include` / `must_not_include` / `exact_answer`（CLI flag 与 `kind:value` DSL；裸 `--criterion` 仍可用）
 - 按 kind 的确定性 completion assessment（结果带 kind/reason）；ANSWER prompt 展示同一份结构化合同
 - 通过 `heuriva --version` 和 `heuriva doctor` 查看版本
@@ -53,7 +55,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 确定性 task-level completion assessment：支持 `off`/`observe`/`enforce`，限制 repair 次数，并覆盖少量常见中英文质量词等价匹配
 - `llm.max_retries` 控制的模型请求 retry，并记录 `attempt_count`
 - search timeout 分类、stale running task 诊断和 opt-in live smoke tests
-- 基于 fake model/search 的 v0.1 到 v0.6 自动化测试
+- 基于 fake model/search 的 v0.1 到 v0.7 自动化测试
 
 当前明确没有实现：
 
@@ -302,7 +304,7 @@ SEARCH decision 需要带 `query`、`evidence_need`、`expected_signal` 和 `sou
 - `ANALYZE -> ANSWER`
 - `SEARCH -> ANSWER(validation error) -> ANSWER`
 
-当前自动化结果为 89 passed、2 skipped live tests。package build 生成 `heuriva-0.6.0` sdist 和 wheel。这证明 v0.6 Task Contract Fidelity 与既有 fresh judging / VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
+当前自动化结果为 93 passed、2 skipped live tests。package build 生成 `heuriva-0.7.0` sdist 和 wheel。这证明 v0.7 Narrow Completion Lexicon 与既有合同 / judging / VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
 
 真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 
@@ -315,10 +317,10 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-Post-v0.6 已关闭；开闸结论仍是 observe 默认、VERIFY 关闭。下一产品版本是 **v0.7 Narrow Completion Lexicon**（规划中，见本地 `plan.md` §65–§69 与 `docs/roadmap-v0.7.md`）：把中英质量词匹配做成共享、可回归的词表层，锁住 `8e45ed21` 类 FN 回潮，而不是急着加 VERIFY 或默认 semantic enforce。
+v0.7 Narrow Completion Lexicon 已落地。默认仍是 observe，不默认打开 VERIFY。只有在合同 + lexicon 之后仍有 ≥2 个不可修复真实 leak 时，再讨论 VERIFY；默认 semantic enforce 仍受 §54 约束（见本地 `plan.md` §54 / §68 与 `docs/promotion-rules-v0.7.md`）。
 
 优先级：
 
-1. 实现共享 lexicon + 中文 safety/tradeoffs known-good harness。
-2. 仅在有证据时做有界表扩展；默认仍 observe。
-3. 在 **8765** 上做 v0.7 live checklist；只有合同 + lexicon 之后仍有 ≥2 不可修复 leak 时再谈 VERIFY。
+1. 在 **8765** 上完成 v0.7 live checklist（新 run 的中文质量词合同样本）。
+2. 词表只做有证据的有界扩展，并带 harness；禁止扩成隐性语义引擎。
+3. 存盘 det 可能滞后于当前 lexicon；开闸以新 run / harness 为准。

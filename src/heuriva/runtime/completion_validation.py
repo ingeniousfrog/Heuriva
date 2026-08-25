@@ -18,63 +18,7 @@ from heuriva.core.task_contract import (
     EvidenceRequirement,
     SearchPolicy,
 )
-
-STOP_WORDS = {
-    "about",
-    "answer",
-    "describe",
-    "explain",
-    "include",
-    "mention",
-    "must",
-    "need",
-    "needs",
-    "provide",
-    "show",
-    "summarize",
-    "the",
-    "this",
-    "with",
-}
-
-TERM_EQUIVALENTS = {
-    "safety": (
-        "safety",
-        "safe",
-        "risk",
-        "risks",
-        "安全",
-        "风险",
-        "伤害",
-        "未成年",
-        "合规",
-        "红线",
-    ),
-    "tradeoff": (
-        "tradeoff",
-        "tradeoffs",
-        "trade-off",
-        "trade-offs",
-        "权衡",
-        "取舍",
-        "代价",
-        "成本",
-        "损失",
-        "摩擦",
-    ),
-    "tradeoffs": (
-        "tradeoffs",
-        "tradeoff",
-        "trade-offs",
-        "trade-off",
-        "权衡",
-        "取舍",
-        "代价",
-        "成本",
-        "损失",
-        "摩擦",
-    ),
-}
+from heuriva.runtime.quality_lexicon import expand_criterion_terms
 
 
 @dataclass(frozen=True)
@@ -232,7 +176,7 @@ class CompletionValidator:
                 evidence_refs=evidence_refs,
             )
         # must_include (including legacy bare-string criteria)
-        terms = _criterion_terms(criterion.value)
+        terms = expand_criterion_terms(criterion.value)
         haystack = answer.lower()
         if not terms:
             return CriterionAssessment(
@@ -273,15 +217,4 @@ def _forbidden_content_present(value: str, answer: str) -> bool:
     needle = value.strip().lower()
     if needle and needle in haystack:
         return True
-    return any(term in haystack for term in _criterion_terms(value))
-
-
-def _criterion_terms(criterion: str) -> tuple[str, ...]:
-    terms: list[str] = []
-    for term in re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_-]{2,}", criterion.lower()):
-        if term in STOP_WORDS:
-            continue
-        for expanded in TERM_EQUIVALENTS.get(term, (term,)):
-            if expanded not in terms:
-                terms.append(expanded)
-    return tuple(terms)
+    return any(term in haystack for term in expand_criterion_terms(value))
