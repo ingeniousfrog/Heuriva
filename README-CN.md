@@ -315,12 +315,12 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.6 Task Contract Fidelity 已落地。默认仍是 observe，不默认打开 VERIFY。只有在合同层已充分、且仍有 ≥2 个不可用 TaskContract / SEARCH / ANSWER / repair 修复的真实 leak 时，再讨论 VERIFY；默认 semantic enforce 仍受 §54 约束（见本地 `plan.md` §54 / §58 与 `docs/promotion-rules-v0.6.md`）。
+v0.6 Task Contract Fidelity 已落地并完成 live acceptance。下一阶段是本地 **Post-v0.6 证据清洗**（用结构化合同复验 leak 类、更新 disagreement 桶、再判定 §54；默认预期仍关闭）。见本地 `plan.md` §60–§63、`docs/roadmap-post-v0.6.md`、`docs/acceptance/post-v0.6-evidence-checklist.md`。
 
 优先级：
 
-1. 在 **8765** Cursor-compatible endpoint 上完成 / 更新 v0.6 live checklist。
-2. 继续用结构化合同消掉合同设计噪声，避免把可修 leak 记成 VERIFY 证据。
-3. 只有门槛满足时再讨论 VERIFY 或窄域 enforce；禁止把通用 LLM judge 做成默认 completion。
+1. 完成 Post-v0.6 evidence checklist（合同修复复验 + judge 桶更新）。
+2. 只有门槛满足时再讨论 VERIFY 或窄域 enforce；禁止把通用 LLM judge 做成默认 completion。
+3. 下一产品版本号（v0.7）主题待证据后再定。
 
 一句话：先把任务合同做准，再谈更严质量模式或新 operator。

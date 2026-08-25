@@ -348,8 +348,8 @@ by the fake suite or the package build.
 
 ## Planned Next
 
-v0.6 Task Contract Fidelity is implemented. Defaults remain `observe`; no
-VERIFY operator ships by default. Revisit VERIFY design only after adequate
-contracts still leave ≥2 distinct non-repairable live leaks (see local
-`plan.md` §54 / §58 and `docs/promotion-rules-v0.6.md` on a development
-checkout).
+v0.6 Task Contract Fidelity is implemented and live-accepted. Next local work is
+**Post-v0.6 evidence** (re-tally disagreements after structured contracts; keep
+gates closed unless §54 is met). See local `plan.md` §60–§63,
+`docs/roadmap-post-v0.6.md`, and `docs/acceptance/post-v0.6-evidence-checklist.md`
+on a development checkout. Defaults remain `observe`; no VERIFY operator by default.
