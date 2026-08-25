@@ -315,12 +315,10 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.6 Task Contract Fidelity 已落地并完成 live acceptance。下一阶段是本地 **Post-v0.6 证据清洗**（用结构化合同复验 leak 类、更新 disagreement 桶、再判定 §54；默认预期仍关闭）。见本地 `plan.md` §60–§63、`docs/roadmap-post-v0.6.md`、`docs/acceptance/post-v0.6-evidence-checklist.md`。
+Post-v0.6 证据已关闭：`recommend_enforce=false`，`enter_verify_design=false`。候选下一产品主题是 **窄域、表驱动的 completion 质量词扩展**（降低中英关键词 FN），默认仍 observe；不是 VERIFY，也不是默认 semantic enforce。见本地 `plan.md` §64、`docs/roadmap-post-v0.6.md`、`docs/acceptance/post-v0.6-evidence-checklist.md`。
 
 优先级：
 
-1. 完成 Post-v0.6 evidence checklist（合同修复复验 + judge 桶更新）。
-2. 只有门槛满足时再讨论 VERIFY 或窄域 enforce；禁止把通用 LLM judge 做成默认 completion。
-3. 下一产品版本号（v0.7）主题待证据后再定。
-
-一句话：先把任务合同做准，再谈更严质量模式或新 operator。
+1. 若开 v0.7：先写 `docs/roadmap-v0.7.md` 与 acceptance checklist，再改 term 表并加 harness。
+2. 只有合同层之后仍有 ≥2 个不可修复真实 leak 时，再讨论 VERIFY。
+3. 禁止把通用 LLM / NLI judge 做成默认 completion。

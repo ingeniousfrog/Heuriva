@@ -348,8 +348,9 @@ by the fake suite or the package build.
 
 ## Planned Next
 
-v0.6 Task Contract Fidelity is implemented and live-accepted. Next local work is
-**Post-v0.6 evidence** (re-tally disagreements after structured contracts; keep
-gates closed unless §54 is met). See local `plan.md` §60–§63,
-`docs/roadmap-post-v0.6.md`, and `docs/acceptance/post-v0.6-evidence-checklist.md`
-on a development checkout. Defaults remain `observe`; no VERIFY operator by default.
+Post-v0.6 evidence is closed: gates stay closed (`recommend_enforce=false`,
+`enter_verify_design=false`). Candidate next product theme is a **narrow
+table-driven completion term expansion** for known CN/EN quality-word FN while
+keeping `observe` defaults — not VERIFY and not default semantic enforce. See
+local `plan.md` §64, `docs/roadmap-post-v0.6.md`, and
+`docs/acceptance/post-v0.6-evidence-checklist.md` on a development checkout.
