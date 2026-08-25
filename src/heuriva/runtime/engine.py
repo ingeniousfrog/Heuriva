@@ -15,9 +15,12 @@ from heuriva.core.observation import Observation, ObservationKind, ObservationSt
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState, StateStatus
 from heuriva.core.state_patch import OperationResult
+from heuriva.core.task_contract import EvidenceRequirement, SearchPolicy, TaskContract
 from heuriva.redaction import redact_text
+from heuriva.runtime.completion_validation import CompletionValidationResult, CompletionValidator
 from heuriva.runtime.executor_router import ExecutorRouter
 from heuriva.runtime.progress_policy import ProgressPolicyResult, evaluate_progress_policy
+from heuriva.runtime.search_policy import SearchGuardResult, evaluate_search_guard
 from heuriva.runtime.state_delta import StateDelta, calculate_state_delta
 from heuriva.runtime.state_updater import StateUpdater
 from heuriva.storage.sqlite import SQLiteStore
@@ -80,6 +83,7 @@ class RuntimeEngine:
         self.executors = executors
         self.router = ExecutorRouter(search_enabled=config.tools.search.enabled)
         self.updater = StateUpdater()
+        self.completion_validator = CompletionValidator(config.quality)
 
     def run(
         self,
@@ -87,12 +91,20 @@ class RuntimeEngine:
         *,
         trace: bool = False,
         progress: ProgressCallback | None = None,
+        criteria: tuple[str, ...] = (),
+        search_policy: SearchPolicy | str = SearchPolicy.AUTO,
+        evidence_requirement: EvidenceRequirement | str = EvidenceRequirement.OPTIONAL,
     ) -> RuntimeResult:
         goal = task.strip()
         if not goal:
             raise ValueError("task must not be empty")
         task_id = new_id()
-        state = CognitiveState.new(task_id=task_id, goal=goal)
+        task_contract = TaskContract.from_user(
+            criteria=criteria,
+            search_policy=search_policy,
+            evidence_requirement=evidence_requirement,
+        )
+        state = CognitiveState.new(task_id=task_id, goal=goal, task_contract=task_contract)
         self.store.create_task_with_trajectory(
             state, config_snapshot=self.config.redacted_snapshot()
         )
@@ -191,16 +203,45 @@ class RuntimeEngine:
                         operator=decision.operator.value,
                         started=started,
                     )
-                    self._notify_progress(
-                        progress,
-                        task_id=task_id,
-                        step_index=state.step_index,
-                        stage="executor_running",
-                        message=f"executing {decision.operator.value}; waiting for result",
-                        operator=decision.operator.value,
-                        started=started,
+                    guard = self._search_guard_for_decision(
+                        state=state,
+                        decision=decision,
+                        committed_steps=tuple(steps),
                     )
-                    result = executor.execute(decision, state)
+                    if guard is not None:
+                        self.store.log_event(
+                            RuntimeEvent(
+                                task_id=state.task_id,
+                                step_index=state.step_index,
+                                event_type="search_guard_applied",
+                                level=EventLevel.WARNING,
+                                payload=guard.payload,
+                            )
+                        )
+                        self._notify_progress(
+                            progress,
+                            task_id=task_id,
+                            step_index=state.step_index,
+                            stage="search_guard_applied",
+                            message=(
+                                f"{guard.reason}; next operators: "
+                                f"{self._operator_names(guard.available_operators)}"
+                            ),
+                            operator=decision.operator.value,
+                            started=started,
+                        )
+                        result = self._guarded_search_result(guard)
+                    else:
+                        self._notify_progress(
+                            progress,
+                            task_id=task_id,
+                            step_index=state.step_index,
+                            stage="executor_running",
+                            message=f"executing {decision.operator.value}; waiting for result",
+                            operator=decision.operator.value,
+                            started=started,
+                        )
+                        result = executor.execute(decision, state)
                 except Exception as exc:
                     event = RuntimeEvent(
                         task_id=state.task_id,
@@ -224,6 +265,25 @@ class RuntimeEngine:
                         started=started,
                     )
                     break
+                completion = self._validate_completion_result(
+                    result=result,
+                    decision=decision,
+                    state=state,
+                    committed_steps=tuple(steps),
+                )
+                if completion.assessment is not None:
+                    self.store.log_event(
+                        RuntimeEvent(
+                            task_id=state.task_id,
+                            step_index=state.step_index,
+                            event_type="completion_assessed",
+                            level=EventLevel.INFO
+                            if completion.result.error is None
+                            else EventLevel.WARNING,
+                            payload=completion.assessment.model_dump(mode="json"),
+                        )
+                    )
+                result = completion.result
                 observation = self._observation_from_result(
                     decision=decision,
                     executor_kind=executor_kind,
@@ -368,6 +428,64 @@ class RuntimeEngine:
             max_no_progress_steps=self.config.runtime.max_no_progress_steps,
             answer_reserve_steps=self.config.runtime.answer_reserve_steps,
         )
+
+    def _search_guard_for_decision(
+        self,
+        *,
+        state: CognitiveState,
+        decision: Decision,
+        committed_steps: tuple[RuntimeStep, ...],
+    ) -> SearchGuardResult | None:
+        if decision.operator is not Operator.SEARCH:
+            return None
+        return evaluate_search_guard(
+            state=state,
+            decision=decision,
+            committed_steps=committed_steps,
+            quality=self.config.quality,
+            base_available=self.router.available_operators(),
+        )
+
+    @staticmethod
+    def _guarded_search_result(guard: SearchGuardResult) -> OperationResult:
+        return OperationResult(
+            content=f"SEARCH blocked by runtime policy: {guard.reason}",
+            metadata={"search_guard": guard.payload},
+        )
+
+    @staticmethod
+    def _operator_names(operators: tuple[Operator, ...]) -> str:
+        return ", ".join(operator.value for operator in operators)
+
+    def _validate_completion_result(
+        self,
+        *,
+        result: OperationResult,
+        decision: Decision,
+        state: CognitiveState,
+        committed_steps: tuple[RuntimeStep, ...],
+    ) -> CompletionValidationResult:
+        if decision.operator is not Operator.ANSWER or result.error is not None:
+            return CompletionValidationResult(result=result, assessment=None)
+        if result.final_answer is None and not result.content.strip():
+            return CompletionValidationResult(result=result, assessment=None)
+        return self.completion_validator.validate(
+            result=result,
+            state=state,
+            previous_completion_failures=self._completion_failure_count(committed_steps),
+        )
+
+    @staticmethod
+    def _completion_failure_count(committed_steps: tuple[RuntimeStep, ...]) -> int:
+        count = 0
+        for step in committed_steps:
+            error = step.observation.error
+            if error is not None and error.code in {
+                "completion_validation_error",
+                "completion_not_met",
+            }:
+                count += 1
+        return count
 
     @staticmethod
     def _notify_progress(

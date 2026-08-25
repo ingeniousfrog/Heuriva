@@ -1,0 +1,35 @@
+cases:
+  - id: local_polish_version
+    evidence_level: synthetic
+    task: "Did the local v0.2.1 polish change the package version?"
+    expected_quality_signal: "local/provided scope should not trigger web search"
+
+  - id: required_web_fact
+    evidence_level: fake_integration
+    task: "Find a public release source and cite it."
+    expected_quality_signal: "relevant accepted evidence can support ANSWER"
+
+  - id: irrelevant_search_result
+    evidence_level: synthetic
+    task: "Search returns unrelated weather results for a Heuriva release query."
+    expected_quality_signal: "irrelevant candidate remains raw/rejected and does not enter state evidence"
+
+  - id: repeated_query
+    evidence_level: fake_integration
+    task: "Controller repeats the same web query."
+    expected_quality_signal: "duplicate query guard fires before provider call"
+
+  - id: cited_but_off_task_answer
+    evidence_level: synthetic
+    task: "ANSWER cites a valid source but misses an explicit criterion."
+    expected_quality_signal: "completion verdict is separate from citation verdict"
+
+  - id: stored_live_relevance_readback
+    evidence_level: stored_live
+    task: "Read an existing live trajectory with relevance assessment metadata."
+    expected_quality_signal: "eval reports stored provenance without replay"
+
+  - id: fresh_live_completion_judge
+    evidence_level: fresh_live
+    task: "Optionally call a model judge for a saved trajectory."
+    expected_quality_signal: "fresh judge provenance is explicit and opt-in"

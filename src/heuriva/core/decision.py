@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from heuriva.core.common import new_id, non_empty, utc_now
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState
+from heuriva.core.task_contract import SourceScope
 
 
 class AnalyzeParams(BaseModel):
@@ -25,11 +26,19 @@ class SearchParams(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     query: str
+    evidence_need: str = ""
+    expected_signal: str = ""
+    source_scope: SourceScope = SourceScope.WEB
 
     @field_validator("query")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         return non_empty(value, "search query")
+
+    @field_validator("evidence_need", "expected_signal")
+    @classmethod
+    def _clean_optional(cls, value: str) -> str:
+        return value.strip()
 
 
 class AnswerParams(BaseModel):

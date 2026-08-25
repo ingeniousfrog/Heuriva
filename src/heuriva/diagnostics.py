@@ -15,6 +15,7 @@ class DiagnosticsReport:
     sqlite_schema: str
     llm_timeout_line: str
     search_timeout_line: str
+    quality_line: str
     stale_running_count: int
     oldest_stale_task_id: str | None
 
@@ -25,6 +26,7 @@ class DiagnosticsReport:
             f"Model: {self.model}",
             self.llm_timeout_line,
             self.search_timeout_line,
+            self.quality_line,
             f"SQLite schema: {self.sqlite_schema}",
             f"Stale running tasks: {self.stale_running_count}",
         ]
@@ -59,6 +61,13 @@ def collect_diagnostics(config: AppConfig, *, home: Path | None = None) -> Diagn
             f"{config.tools.search.timeout_seconds:g}s "
             f"max_results={config.tools.search.max_results} "
             f"enabled={str(config.tools.search.enabled).lower()}"
+        ),
+        quality_line=(
+            "Quality modes: "
+            f"relevance={config.quality.evidence_relevance_mode.value} "
+            f"completion={config.quality.completion_check_mode.value} "
+            f"search_budget={config.quality.max_search_steps} "
+            f"completion_repairs={config.quality.max_completion_repairs}"
         ),
         stale_running_count=stale_count,
         oldest_stale_task_id=oldest_stale_task_id,

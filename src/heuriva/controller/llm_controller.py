@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from pydantic import ValidationError
 
@@ -18,6 +18,7 @@ from heuriva.core.event import EventLevel, RuntimeEvent
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState
 from heuriva.redaction import redact_text
+from heuriva.runtime.structured_output import parse_json_object
 
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "controller.txt"
 
@@ -59,7 +60,7 @@ class LLMController:
             )
             try:
                 response = self.model_client.chat(messages)
-                payload = self._parse_json_object(response.content)
+                payload = parse_json_object(response.content, phase="controller")
                 draft = DecisionDraft.model_validate(normalize_draft_payload(payload))
                 if draft.operator not in available_operators:
                     raise ValueError(f"operator {draft.operator.value} is not available")
@@ -100,17 +101,3 @@ class LLMController:
             {"role": "system", "content": self.prompt_template},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
-
-    @staticmethod
-    def _parse_json_object(content: str) -> dict[str, Any]:
-        stripped = content.strip()
-        if stripped.startswith("```"):
-            lines = stripped.splitlines()
-            if len(lines) >= 3 and lines[-1].strip() == "```":
-                stripped = "\n".join(lines[1:-1]).strip()
-                if stripped.startswith("json"):
-                    stripped = stripped[4:].strip()
-        payload = json.loads(stripped)
-        if not isinstance(payload, dict):
-            raise ValueError("controller response must be a JSON object")
-        return payload

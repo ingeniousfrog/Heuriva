@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,9 @@ from typer.testing import CliRunner
 from heuriva import __version__
 from heuriva.cli import app
 from heuriva.core.common import utc_now
+from heuriva.core.decision import AnswerParams, DecisionDraft, bind_decision
+from heuriva.core.observation import Observation, ObservationKind, ObservationStatus
+from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState
 from heuriva.runtime.engine import RuntimeInterrupted, RuntimeProgress, RuntimeResult
 from heuriva.storage.sqlite import SQLiteStore
@@ -83,10 +87,20 @@ def test_cli_run_json_keeps_stdout_machine_readable_and_streams_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeEngine:
-        def run(self, task: str, *, trace: bool = False, progress: Any = None) -> RuntimeResult:
+        def run(
+            self,
+            task: str,
+            *,
+            trace: bool = False,
+            progress: Any = None,
+            criteria: tuple[str, ...] = (),
+            search_policy: object = "auto",
+        ) -> RuntimeResult:
             assert task == "demo task"
             assert trace is False
             assert progress is not None
+            assert criteria == ()
+            assert str(search_policy) == "auto"
             progress(
                 RuntimeProgress(
                     task_id="task-123456",
@@ -122,8 +136,16 @@ def test_cli_run_interrupt_prints_full_task_id_and_show_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeEngine:
-        def run(self, task: str, *, trace: bool = False, progress: Any = None) -> RuntimeResult:
-            del task, trace, progress
+        def run(
+            self,
+            task: str,
+            *,
+            trace: bool = False,
+            progress: Any = None,
+            criteria: tuple[str, ...] = (),
+            search_policy: object = "auto",
+        ) -> RuntimeResult:
+            del task, trace, progress, criteria, search_policy
             raise RuntimeInterrupted("task-123456789")
 
     monkeypatch.setattr("heuriva.cli._build_engine", lambda: FakeEngine())
@@ -148,6 +170,64 @@ def test_cli_show_missing_task_returns_not_found(
     assert "not found" in result.stderr
 
 
+def test_cli_eval_json_reads_saved_trajectory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(app, ["setup"])
+    store = SQLiteStore(tmp_path / ".heuriva" / "memory.db")
+    state = CognitiveState.new(task_id="task-eval", goal="Explain")
+    store.create_task_with_trajectory(state, config_snapshot={})
+    decision = bind_decision(
+        DecisionDraft(
+            operator=Operator.ANSWER,
+            objective="answer",
+            reason="done",
+            success_criteria=("final",),
+            params=AnswerParams(),
+            confidence=0.8,
+        ),
+        state,
+    )
+    observation = Observation(
+        task_id=state.task_id,
+        decision_id=decision.id,
+        kind=ObservationKind.ANSWER,
+        status=ObservationStatus.SUCCESS,
+        content="Final",
+        executor_kind="llm",
+        metadata={
+            "completion_assessment": {
+                "verdict": "pass",
+                "failed_criteria": [],
+            }
+        },
+    )
+    next_state = state.advance(status="done")
+    store.commit_step(
+        state_before=state,
+        decision=decision,
+        observation=observation,
+        state_after=next_state,
+    )
+    store.finalize_task(
+        task_id=state.task_id,
+        final_state=next_state,
+        status="done",
+        termination_reason="answer",
+        final_answer="Final",
+    )
+
+    result = runner.invoke(app, ["eval", "--json", state.task_id])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["task_id"] == "task-eval"
+    assert payload["completion_verdict"] == "pass"
+    assert result.stderr == ""
+
+
 def test_cli_doctor_reports_effective_runtime_diagnostics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -159,7 +239,7 @@ def test_cli_doctor_reports_effective_runtime_diagnostics(
     state = CognitiveState.new(task_id="task-stale", goal="unfinished")
     store.create_task_with_trajectory(state, config_snapshot={})
     stale_time = (utc_now() - timedelta(seconds=1200)).isoformat()
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute(
             "UPDATE tasks SET updated_at = ? WHERE id = ?",
             (stale_time, state.task_id),

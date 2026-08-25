@@ -6,6 +6,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from heuriva.core.common import new_id, non_empty, utc_now
+from heuriva.core.task_contract import TaskContract
 
 
 class StateStatus(StrEnum):
@@ -52,11 +53,38 @@ class EvidenceItem(BaseModel):
     source_type: str
     source_ref: str
     retrieved_at: datetime = Field(default_factory=utc_now)
+    query: str | None = None
+    relevance_verdict: str = "unassessed"
+    supports_criteria: tuple[str, ...] = ()
+    assessment_origin: str = "legacy"
 
     @field_validator("content", "source_type", "source_ref")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         return non_empty(value, "evidence field")
+
+    @field_validator("query")
+    @classmethod
+    def _clean_query(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("relevance_verdict", "assessment_origin")
+    @classmethod
+    def _non_empty_metadata(cls, value: str) -> str:
+        return non_empty(value, "evidence metadata field")
+
+    @field_validator("supports_criteria")
+    @classmethod
+    def _clean_criteria(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned: list[str] = []
+        for value in values:
+            stripped = value.strip()
+            if stripped and stripped not in cleaned:
+                cleaned.append(stripped)
+        return tuple(cleaned)
 
 
 class FailureRecord(BaseModel):
@@ -81,6 +109,7 @@ class CognitiveState(BaseModel):
     revision_index: int = Field(ge=0)
     step_index: int = Field(ge=0)
     goal: str
+    task_contract: TaskContract = Field(default_factory=TaskContract)
     constraints: tuple[str, ...] = ()
     known: tuple[KnownItem, ...] = ()
     unknowns: tuple[str, ...] = ()
@@ -114,6 +143,7 @@ class CognitiveState(BaseModel):
         *,
         task_id: str,
         goal: str,
+        task_contract: TaskContract | None = None,
         constraints: tuple[str, ...] = (),
         unknowns: tuple[str, ...] = (),
     ) -> CognitiveState:
@@ -122,6 +152,7 @@ class CognitiveState(BaseModel):
             revision_index=0,
             step_index=0,
             goal=goal,
+            task_contract=task_contract or TaskContract(),
             constraints=constraints,
             unknowns=unknowns,
             unresolved=(),

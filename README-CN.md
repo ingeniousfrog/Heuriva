@@ -6,9 +6,9 @@
 
 Heuriva 是一个 Python CLI 形态的认知运行时，用来观察一个冻结权重的语言模型在显式状态、动态操作选择和可持久化轨迹帮助下，如何一步一步解决任务。
 
-v0.2 保留 v0.1 的三操作 runtime，同时把重点推进到“更可解释、可恢复、可验证”：runtime 会判断每一步是否产生实质状态进展，会对低进展循环做确定性 guard，最终答案会用本地已保存 evidence 标签做 citation 校验，失败和诊断信息也会更清楚地落到轨迹里。
+v0.3 保留 v0.1/v0.2 的三操作 runtime，并补上任务级质量闭环：稳定 `TaskContract`、结构化 SEARCH 意图、搜索前 guard、raw/accepted/rejected evidence 对账、completion assessment，以及只读 `heuriva eval` trajectory 报告。
 
-v0.2.1 是一个小 polish：`heuriva --version` 和 `heuriva doctor` 会显示版本；controller draft 会把单个字符串形式的 `success_criteria` 规范化成单元素列表，再进入结构化校验。
+v0.3 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。它不会把模型 assessment 写成客观正确率或事实证明；所有质量 verdict 都只是带 provenance 的运行信号。
 
 Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK，而是证明一条可检查的最小闭环：
 
@@ -24,30 +24,36 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 
 - Python package 与 `heuriva` CLI 入口
 - `heuriva setup`、`heuriva doctor`、`heuriva run`、交互式 `heuriva`、`heuriva show`
+- 只读 `heuriva eval` 和 `heuriva eval --json`
 - 通过 `heuriva --version` 和 `heuriva doctor` 查看版本
 - `~/.heuriva/` 下的本地配置
 - OpenAI-compatible 非流式 `/v1/chat/completions` client
 - v0.1 三个认知操作：`ANALYZE`、`SEARCH`、`ANSWER`
-- LLM controller 的结构化 JSON 校验、`success_criteria` 规范化和一次修复重试
+- LLM controller 的结构化 JSON 校验、`success_criteria` 规范化、v0.3 SEARCH intent 字段和一次修复重试
 - 确定性 `ExecutorRouter`，把 operator 选择和 executor 选择分开
 - LLM executor 和 search executor
-- 基于 Pydantic v2 的不可变核心 schema
+- 基于 Pydantic v2 的不可变核心 schema，以及不可变任务级 `TaskContract`
 - SQLite trajectory store：schema version、foreign keys、唯一 step 约束、单步事务提交
 - runtime progress policy：same-operator、no-material-progress 和 answer-reserve guard
+- runtime search quality guard：用户禁止搜索、local/provided source scope、重复 query、search budget、缺少搜索意图、连续无相关结果
+- search executor metadata：区分 raw candidate、accepted evidence、rejected candidate 和确定性 relevance verdict
 - state delta：简洁 trace、`show --trace` 和 `show --json` 使用同一份结构化差异
 - evidence-aware ANSWER prompt，以及基于已保存 evidence 的 `[S1]` citation validator
+- 确定性 task-level completion assessment：支持 `off`/`observe`/`enforce`，限制 repair 次数，并覆盖少量常见中英文质量词等价匹配
 - `llm.max_retries` 控制的模型请求 retry，并记录 `attempt_count`
 - search timeout 分类、stale running task 诊断和 opt-in live smoke tests
-- 基于 fake model/search 的 v0.1/v0.2 自动化测试
+- 基于 fake model/search 的 v0.1、v0.2、v0.3 自动化测试
 
 当前明确没有实现：
 
-- 程序性学习、policy lifecycle、replay、benchmark runner、evaluation tables
+- 程序性学习、policy lifecycle、replay、benchmark runner、跨任务 evaluation tables
 - vector database、dashboard、MCP、多 Agent、workflow builder
 - shell/filesystem/Python executor、URL crawling
 - daemon、任务恢复、并发队列
 - provider-specific model client
-- 独立 `VERIFY` operator；v0.2 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`
+- 独立 `VERIFY` operator；v0.3 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`
+- `heuriva eval --judge` 的 fresh model judging；当前 flag 预留，默认 eval 是只读路径
+- fresh model relevance/completion judging，以及 semantic enforce promotion gate
 
 真实 Cursor-compatible endpoint 和真实公网搜索 smoke test 是可选验证，默认自动化测试会跳过，不访问网络。
 
@@ -137,6 +143,8 @@ heuriva doctor --probe --probe-timeout 30
 ```bash
 heuriva run --trace "分析这个项目是否值得做成产品"
 heuriva run --json "分析这个项目是否值得做成产品"
+heuriva run --criterion "提到取舍" --search-policy forbidden \
+  "只基于本地项目方向做说明，不访问 Web"
 ```
 
 长任务会把实时进度输出到 stderr。使用 `--json` 时，stdout 仍只保留最终机器可读 JSON，方便脚本解析；如果不需要实时状态，可以加 `--no-progress` 关闭。
@@ -148,7 +156,11 @@ heuriva run --json "分析这个项目是否值得做成产品"
 ```bash
 heuriva show --trace <task_id>
 heuriva show --json <task_id>
+heuriva eval <task_id>
+heuriva eval --json <task_id>
 ```
+
+`heuriva eval` 默认只读，不 replay task，也不会调用模型。它会汇总已保存的 task contract、search guard、raw/accepted/rejected evidence 数量、citation 状态、completion verdict 和 parse warning 计数。
 
 进入简单交互模式：
 
@@ -184,6 +196,13 @@ runtime:
   max_no_progress_steps: 2
   answer_reserve_steps: 2
 
+quality:
+  evidence_relevance_mode: observe
+  completion_check_mode: observe
+  max_search_steps: 3
+  max_no_relevant_search_steps: 1
+  max_completion_repairs: 1
+
 tools:
   search:
     enabled: true
@@ -202,9 +221,11 @@ API key 只从环境变量读取，不写入 YAML、SQLite 或 trace。`memory.d
 
 默认启用搜索。搜索 query 会发送给第三方搜索服务；搜索结果摘要会被当作不可信外部数据，而不是模型可执行指令。
 
+quality mode 支持 `off`、`observe`、`enforce`。`observe` 记录 verdict 和 metadata；`enforce` 可以阻止无关 evidence 写入 state，或在 task contract 未满足时阻止 ANSWER 进入 `done`。
+
 ## 运行时流程
 
-每个 task 会创建一个初始不可变 `CognitiveState`，然后进入 runtime loop，直到到达 `done`、`failed`、`max_steps_reached` 或 `interrupted`。
+每个 task 会创建一个带稳定 `TaskContract` 的初始不可变 `CognitiveState`，然后进入 runtime loop，直到到达 `done`、`failed`、`max_steps_reached` 或 `interrupted`。
 
 每个已提交 step 会写入：
 
@@ -228,6 +249,10 @@ ANSWER  -> llm
 
 如果当前 state 里已有 `SEARCH` evidence，成功 `ANSWER` 必须至少引用一个已保存标签，例如 `[S1]`。未知标签或缺少必需引用会形成 `answer_validation_error` observation，不会被标记成 `done`，也不会伪造来源。
 
+v0.3 的 SEARCH decision 需要带 `query`、`evidence_need`、`expected_signal` 和 `source_scope`。在真正调用搜索 provider 之前，runtime 可以因为用户禁止搜索、controller 标记 local/provided source scope、重复 query、search budget 耗尽，或最近搜索没有 accepted evidence 而拦截 Web 搜索。
+
+搜索结果会先作为 raw candidate 进入 observation metadata；只有 accepted evidence 会写入 state，并且只有它能算作实质进展。completion assessment 与 citation validation 是两层判断：citation 只证明标签能回映射到已保存 evidence，completion assessment 才检查稳定 criteria 和 required evidence 是否满足。
+
 ## 验证
 
 当前实现已跑过：
@@ -238,19 +263,18 @@ ANSWER  -> llm
 .venv/bin/mypy src tests
 .venv/bin/pytest
 .venv/bin/pytest --cov=heuriva --cov-report=term-missing
-.venv/bin/uv sync --extra dev
-.venv/bin/uv run pytest
-.venv/bin/uv run heuriva --help
 .venv/bin/python -m hatchling build
+.venv/bin/heuriva --version
+.venv/bin/heuriva eval --help
 ```
 
-自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断，以及多条 fake runtime 路径：
+自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、常见中英文 criterion 匹配、只读 eval 输出，以及多条 fake runtime 路径：
 
 - `ANALYZE -> SEARCH -> ANSWER`
 - `ANALYZE -> ANSWER`
 - `SEARCH -> ANSWER(validation error) -> ANSWER`
 
-这证明 v0.2 机制在 fake model/search 下可运行，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
+当前自动化结果为 64 passed、2 skipped live tests，总覆盖率 87%。这证明 v0.3 机制在 fake model/search 和只读 trajectory 下可运行，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
 
 真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 
@@ -263,14 +287,14 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-v0.2.1 后，下一步更适合补负向边界和控制器稳定性，而不是急着扩展新 operator。
+v0.3 后，下一步更适合做真实验收和 known-good/known-bad corpus，而不是急着扩展新 operator。
 
 优先级最高的是：
 
-1. 复测 search timeout 和 retry exhausted，确认状态、退出码、task ID 和底层原因都可恢复检查。
-2. 继续观察 live controller 是否还出现 `controller_parse_error`，尤其是 repair 前后 operator/objective 是否漂移。
-3. 明确 stale running task 的处理策略：只诊断、手动 mark-interrupted，还是后续自动恢复。
-4. 改善 search relevance 和 success criteria 判定，避免“引用对账通过但任务没真正满足”。
-5. 若至少两个真实任务在 citation validator 通过后仍稳定不满足 success criteria，再讨论后续 `VERIFY` 设计。
+1. 在 ignored v0.3 checklist 里记录真实 Cursor-compatible endpoint task IDs、relevance verdict 和 completion verdict。
+2. 用至少三个真正需要外部事实的 live task 检查 search guard 是否误伤。
+3. 建 known-good/known-bad corpus，再决定 completion_check_mode 是否能从 observe 提升到 enforce。
+4. 继续观察 controller/relevance/completion parse warning，按 phase 对账。
+5. 只有当至少两个真实任务在 v0.3 pipeline 后仍稳定 citation 通过但任务未完成，再讨论后续 `VERIFY` 设计。
 
-一句话：v0.2 先把“可解释、可恢复、可验证”做扎实；学习、多 Agent 或新的 operator 仍应等 evaluation 证据之后再做。
+一句话：v0.3 先把“证据相关性与任务完成质量闭环”做扎实；学习、多 Agent 或新的 operator 仍应等真实 evaluation 证据之后再做。

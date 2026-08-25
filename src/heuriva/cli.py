@@ -14,7 +14,9 @@ from heuriva.clients.search import SearchClient
 from heuriva.config import api_key_for, load_config, setup_config
 from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
+from heuriva.core.task_contract import SearchPolicy
 from heuriva.diagnostics import collect_diagnostics
+from heuriva.evaluation import evaluate_trajectory
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
 from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
@@ -125,6 +127,18 @@ def run(
     progress_output: Annotated[
         bool, typer.Option("--progress/--no-progress", help="Show live progress on stderr.")
     ] = True,
+    criterion: Annotated[
+        list[str] | None,
+        typer.Option("--criterion", help="Stable task-level completion criterion."),
+    ] = None,
+    search_policy: Annotated[
+        SearchPolicy,
+        typer.Option(
+            "--search-policy",
+            case_sensitive=False,
+            help="Task-level search policy: auto, required, or forbidden.",
+        ),
+    ] = SearchPolicy.AUTO,
 ) -> None:
     text = " ".join(task).strip()
     if not text:
@@ -135,7 +149,13 @@ def run(
         progress: Callable[[RuntimeProgress], None] | None = None
         if progress_output:
             progress = partial(_emit_progress, json_output=json_output)
-        result = engine.run(text, trace=trace, progress=progress)
+        result = engine.run(
+            text,
+            trace=trace,
+            progress=progress,
+            criteria=tuple(criterion or ()),
+            search_policy=search_policy,
+        )
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
@@ -210,6 +230,52 @@ def show(
         typer.echo(render_saved_trajectory(data, trace=trace))
 
 
+@app.command(name="eval")
+def eval_task(
+    task_id: Annotated[str, typer.Argument(help="Task ID to evaluate.")],
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+    judge: Annotated[
+        bool,
+        typer.Option(
+            "--judge",
+            help="Reserved for fresh model judging; not used by the default read-only eval.",
+        ),
+    ] = False,
+) -> None:
+    if judge:
+        typer.echo(
+            "--judge is reserved for future fresh model assessment; default eval is read-only.",
+            err=True,
+        )
+    try:
+        config = load_config()
+        data = SQLiteStore(config.storage.sqlite_path).get_trajectory(task_id)
+    except KeyError as exc:
+        typer.echo(f"Task not found: {task_id}", err=True)
+        raise typer.Exit(4) from exc
+    except Exception as exc:
+        typer.echo(f"Could not read task: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    report = evaluate_trajectory(data)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False))
+        return
+    typer.echo(f"task_id: {report.task_id}")
+    typer.echo(f"status: {report.status}")
+    typer.echo(f"evidence_level: {report.evidence_level}")
+    typer.echo(f"search_steps: {report.search_steps}")
+    typer.echo(f"search_guards: {report.search_guard_count}")
+    typer.echo(f"raw_candidates: {report.raw_candidate_count}")
+    typer.echo(f"accepted_evidence: {report.accepted_evidence_count}")
+    typer.echo(f"rejected_candidates: {report.rejected_candidate_count}")
+    typer.echo(f"citation_validation: {report.citation_validation}")
+    typer.echo(f"completion_verdict: {report.completion_verdict}")
+    if report.failed_criteria:
+        typer.echo(f"failed_criteria: {', '.join(report.failed_criteria)}")
+
+
 def _build_engine() -> RuntimeEngine:
     config = load_config()
     store = SQLiteStore(config.storage.sqlite_path)
@@ -234,7 +300,8 @@ def _build_engine() -> RuntimeEngine:
             search_client=SearchClient(
                 max_results=config.tools.search.max_results,
                 timeout_seconds=config.tools.search.timeout_seconds,
-            )
+            ),
+            quality_config=config.quality,
         )
     return RuntimeEngine(config=config, store=store, controller=controller, executors=executors)
 

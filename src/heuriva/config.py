@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -56,6 +57,22 @@ class RuntimeConfig(BaseModel):
     answer_reserve_steps: int = Field(default=2, ge=1, le=20)
 
 
+class QualityMode(StrEnum):
+    OFF = "off"
+    OBSERVE = "observe"
+    ENFORCE = "enforce"
+
+
+class QualityConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    evidence_relevance_mode: QualityMode = QualityMode.OBSERVE
+    completion_check_mode: QualityMode = QualityMode.OBSERVE
+    max_search_steps: int = Field(default=3, ge=0, le=20)
+    max_no_relevant_search_steps: int = Field(default=1, ge=0, le=20)
+    max_completion_repairs: int = Field(default=1, ge=0, le=10)
+
+
 class StorageConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -89,6 +106,7 @@ class AppConfig(BaseModel):
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    quality: QualityConfig = Field(default_factory=QualityConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
 
@@ -104,6 +122,7 @@ class AppConfig(BaseModel):
                 "max_retries": self.llm.max_retries,
             },
             "runtime": self.runtime.model_dump(mode="json"),
+            "quality": self.quality.model_dump(mode="json"),
             "storage": {"sqlite_path": self.storage.sqlite_path},
             "tools": self.tools.model_dump(mode="json"),
         }
@@ -142,6 +161,13 @@ def default_config_text() -> str:
             "  max_same_operator_streak: 3",
             "  max_no_progress_steps: 2",
             "  answer_reserve_steps: 2",
+            "",
+            "quality:",
+            "  evidence_relevance_mode: observe",
+            "  completion_check_mode: observe",
+            "  max_search_steps: 3",
+            "  max_no_relevant_search_steps: 1",
+            "  max_completion_repairs: 1",
             "",
             "storage:",
             "  sqlite_path: ~/.heuriva/memory.db",

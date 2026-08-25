@@ -4,15 +4,15 @@
 
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.2 keeps the
-small three-operator runtime from v0.1 and makes each task run easier to
-explain, recover, and verify: the runtime tracks material state progress, guards
-low-progress loops, validates evidence citations in final answers, and records
-richer diagnostics in the local trajectory store.
+Heuriva is a Python CLI cognitive runtime for language models. v0.3 keeps the
+small three-operator runtime from v0.1/v0.2 and adds a task-level quality loop:
+stable completion criteria, search intent contracts, pre-search guards,
+accepted-versus-rejected evidence accounting, completion assessment, and a
+read-only `heuriva eval` report for saved trajectories.
 
-v0.2.1 is a small polish release: CLI version visibility is available through
-`heuriva --version` and `heuriva doctor`, and controller drafts now normalize a
-single string `success_criteria` into a one-item list before validation.
+v0.3 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. It does not claim that a
+model assessment proves correctness; quality verdicts are stored runtime signals
+with explicit provenance.
 
 ## Current Status
 
@@ -21,38 +21,50 @@ Implemented in this repository:
 - Python package with `heuriva` CLI entry point
 - `heuriva setup`, `heuriva doctor`, `heuriva run`, interactive `heuriva`, and
   `heuriva show`
+- Read-only `heuriva eval` and `heuriva eval --json` for saved trajectories
 - Version visibility through `heuriva --version` and `heuriva doctor`
 - Local config under `~/.heuriva/`
 - OpenAI-compatible non-streaming `/v1/chat/completions` client
 - v0.1 operators: `ANALYZE`, `SEARCH`, `ANSWER`
 - LLM controller with structured JSON validation, `success_criteria`
-  normalization, and one repair attempt
+  normalization, v0.3 SEARCH intent fields, and one repair attempt
 - Deterministic executor router that keeps operator selection separate from
   executor selection
 - LLM and search executors
 - Immutable Pydantic v2 schemas for state, decision, observation, events, and
-  trajectory records
+  trajectory records, plus immutable task-level `TaskContract`
 - SQLite trajectory store with schema versioning, foreign keys, unique step
   constraints, and atomic step commits
 - Runtime-owned progress policy with same-operator, no-material-progress, and
   answer-reserve guards
+- Runtime-owned search quality guards for forbidden search, local/provided
+  source scope, repeated queries, search budget, missing search intent, and
+  consecutive no-relevant-result steps
+- Search executor metadata that separates raw candidates, accepted evidence,
+  rejected candidates, and deterministic relevance verdicts
 - State delta rendering for concise trace, `show --trace`, and `show --json`
 - Evidence-aware ANSWER prompt plus deterministic `[S1]` citation validation
   against saved state evidence
+- Deterministic completion assessment for stable task criteria and required evidence, with
+  `off`/`observe`/`enforce` quality modes, bounded repair attempts, and a
+  small deterministic equivalence table for common Chinese/English quality terms
 - Retryable model HTTP failures controlled by `llm.max_retries`, with
   `attempt_count` metadata
 - Search timeout classification, stale running task diagnostics, and opt-in live
   smoke tests
-- Automated fake model/search tests for core v0.1 and v0.2 runtime paths
+- Automated fake model/search tests for core v0.1, v0.2, and v0.3 runtime paths
 
 Not implemented:
 
-- Learning policies, policy lifecycle, replay, benchmark runner, evaluation
-  tables, vector database, dashboard, MCP, shell/filesystem/Python executors,
+- Learning policies, policy lifecycle, replay, benchmark runner, cross-task
+  evaluation tables, vector database, dashboard, MCP, shell/filesystem/Python executors,
   multi-agent workflows, URL crawling, daemon mode, task resume, or concurrent
   queues
-- A separate `VERIFY` operator. v0.2 still uses only `ANALYZE`, `SEARCH`, and
+- A separate `VERIFY` operator. v0.3 still uses only `ANALYZE`, `SEARCH`, and
   `ANSWER`.
+- Fresh model judging in `heuriva eval --judge`; the flag is reserved and the
+  default eval path is read-only.
+- Fresh model relevance/completion judging and semantic enforce promotion gates.
 
 Live Cursor-compatible endpoint and real web search smoke tests are opt-in and
 are skipped by the default automated test suite.
@@ -89,6 +101,8 @@ Run a task:
 ```bash
 heuriva run --trace "Analyze whether this project should become a product"
 heuriva run --json "Analyze whether this project should become a product"
+heuriva run --criterion "mention the tradeoffs" --search-policy forbidden \
+  "Explain the local project direction without web search"
 ```
 
 Long-running tasks stream live progress to stderr. When `--json` is used,
@@ -106,7 +120,14 @@ Inspect a stored trajectory:
 ```bash
 heuriva show --trace <task_id>
 heuriva show --json <task_id>
+heuriva eval <task_id>
+heuriva eval --json <task_id>
 ```
+
+`heuriva eval` is read-only by default. It summarizes stored task contracts,
+search guards, raw/accepted/rejected evidence counts, citation status,
+completion verdicts, and parse-warning counts without replaying the task or
+calling the model.
 
 Start the simple REPL:
 
@@ -142,6 +163,13 @@ runtime:
   max_no_progress_steps: 2
   answer_reserve_steps: 2
 
+quality:
+  evidence_relevance_mode: observe
+  completion_check_mode: observe
+  max_search_steps: 3
+  max_no_relevant_search_steps: 1
+  max_completion_repairs: 1
+
 tools:
   search:
     enabled: true
@@ -164,10 +192,15 @@ Search is enabled by default. Search queries are sent to the configured
 third-party search provider, and search snippets are treated as untrusted
 external data.
 
+Quality modes accept `off`, `observe`, or `enforce`. `observe` records verdicts
+and metadata; `enforce` can block irrelevant evidence or prevent an answer from
+entering `done` when the task contract is unmet.
+
 ## Runtime Shape
 
-For each task, Heuriva creates an initial immutable `CognitiveState`, then loops
-until it reaches `done`, `failed`, `max_steps_reached`, or `interrupted`.
+For each task, Heuriva creates an initial immutable `CognitiveState` with a
+stable `TaskContract`, then loops until it reaches `done`, `failed`,
+`max_steps_reached`, or `interrupted`.
 
 Each committed operator step stores:
 
@@ -203,6 +236,18 @@ an `answer_validation_error` observation instead of `done`, leaving the
 trajectory readable and allowing a later ANSWER attempt within the remaining
 budget.
 
+v0.3 also asks SEARCH decisions for `query`, `evidence_need`,
+`expected_signal`, and `source_scope`. The runtime can block Web search before
+the provider call when the user forbids search, the controller marks the source
+as local/provided, the query repeats, the search budget is exhausted, or recent
+searches produced no accepted evidence.
+
+Search results are stored as raw candidates in observation metadata. Only
+accepted evidence is written into state and can count as material progress.
+Completion assessment is separate from citation validation: citation checks
+prove labels map to saved evidence, while completion assessment checks stable
+criteria and required evidence according to the configured quality mode.
+
 ## Verification
 
 Automated checks used for this implementation:
@@ -212,6 +257,10 @@ Automated checks used for this implementation:
 .venv/bin/ruff check .
 .venv/bin/mypy src tests
 .venv/bin/pytest
+.venv/bin/pytest --cov=heuriva --cov-report=term-missing
+.venv/bin/python -m hatchling build
+.venv/bin/heuriva --version
+.venv/bin/heuriva eval --help
 ```
 
 The fake test suite covers schema immutability, config precedence, redaction,
@@ -220,9 +269,14 @@ controller `success_criteria` normalization, router separation, state patch
 application, SQLite rollback, CLI setup/doctor, live run progress on stderr
 without polluting JSON stdout, loop guard behavior, state delta rendering,
 citation validation and repair, model retry accounting, search timeout
-classification, stale task diagnostics, and dynamic runtime paths
-including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
-`SEARCH -> ANSWER(validation error) -> ANSWER`.
+classification, stale task diagnostics, task contracts, search guards, evidence
+relevance accounting, non-duplicated eval evidence counts, completion enforce
+mode, common Chinese/English criterion matching, read-only eval output, and
+dynamic runtime paths including `ANALYZE -> SEARCH -> ANSWER`,
+`ANALYZE -> ANSWER`, and `SEARCH -> ANSWER(validation error) -> ANSWER`.
+
+The current automated suite reports 64 passed and 2 skipped live tests, with
+87% total coverage. The 0.3.0 wheel and sdist build locally.
 
 Live verification should be recorded separately:
 
@@ -237,4 +291,6 @@ does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
 
-The pytest live smoke files are opt-in and remain skipped by default.
+The pytest live smoke files are opt-in and remain skipped by default. v0.3 live
+acceptance should be recorded in the ignored local checklist; it is not implied
+by the fake suite or the package build.

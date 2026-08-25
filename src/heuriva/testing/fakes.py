@@ -17,6 +17,7 @@ from heuriva.core.observation import SourceRef
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState, EvidenceItem, KnownItem
 from heuriva.core.state_patch import OperationResult, StatePatch
+from heuriva.core.task_contract import SourceScope
 
 
 class QueueModelClient:
@@ -120,7 +121,12 @@ def make_search_decision(query: str) -> DecisionDraft:
         objective="Find supporting evidence",
         reason="need outside source metadata",
         success_criteria=("source with URL",),
-        params=SearchParams(query=query),
+        params=SearchParams(
+            query=query,
+            evidence_need="task-relevant external evidence",
+            expected_signal="source title, snippet, and URL",
+            source_scope=SourceScope.WEB,
+        ),
         confidence=0.5,
     )
 
