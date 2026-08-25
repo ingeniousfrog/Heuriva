@@ -14,7 +14,7 @@ from heuriva.clients.search import SearchClient
 from heuriva.config import api_key_for, load_config, setup_config
 from heuriva.controller.llm_controller import LLMController
 from heuriva.core.operator import Operator
-from heuriva.core.task_contract import SearchPolicy
+from heuriva.core.task_contract import CriterionInput, SearchPolicy, parse_criteria
 from heuriva.diagnostics import collect_diagnostics
 from heuriva.eval_judge import FreshJudge
 from heuriva.evaluation import (
@@ -136,7 +136,35 @@ def run(
     ] = True,
     criterion: Annotated[
         list[str] | None,
-        typer.Option("--criterion", help="Stable task-level completion criterion."),
+        typer.Option(
+            "--criterion",
+            help=(
+                "Stable task-level completion criterion. Bare strings map to must_include "
+                "(v0.5 compatible). Prefer kind DSL: must_include:…, must_not_include:…, "
+                "exact_answer:…."
+            ),
+        ),
+    ] = None,
+    criterion_exact: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--criterion-exact",
+            help="Require the whole final answer to equal this value (exact_answer).",
+        ),
+    ] = None,
+    criterion_must_include: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--criterion-must-include",
+            help="Require the answer to include this content (must_include).",
+        ),
+    ] = None,
+    criterion_must_not: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--criterion-must-not",
+            help="Forbid this content in the final answer (must_not_include).",
+        ),
     ] = None,
     search_policy: Annotated[
         SearchPolicy,
@@ -152,6 +180,12 @@ def run(
         typer.echo("Task must not be empty.", err=True)
         raise typer.Exit(2)
     try:
+        criteria = _cli_criteria(
+            criterion=criterion,
+            criterion_exact=criterion_exact,
+            criterion_must_include=criterion_must_include,
+            criterion_must_not=criterion_must_not,
+        )
         engine = _build_engine()
         progress: Callable[[RuntimeProgress], None] | None = None
         if progress_output:
@@ -160,7 +194,7 @@ def run(
             text,
             trace=trace,
             progress=progress,
-            criteria=tuple(criterion or ()),
+            criteria=criteria,
             search_policy=search_policy,
         )
     except ValueError as exc:
@@ -370,6 +404,23 @@ def eval_suite(
     failed = report.totals_by_status.get("fail", 0)
     if failed:
         raise typer.Exit(1)
+
+
+def _cli_criteria(
+    *,
+    criterion: list[str] | None,
+    criterion_exact: list[str] | None,
+    criterion_must_include: list[str] | None,
+    criterion_must_not: list[str] | None,
+) -> tuple[CriterionInput, ...]:
+    raw: list[CriterionInput] = list(criterion or ())
+    for value in criterion_must_include or ():
+        raw.append({"kind": "must_include", "value": value})
+    for value in criterion_must_not or ():
+        raw.append({"kind": "must_not_include", "value": value})
+    for value in criterion_exact or ():
+        raw.append({"kind": "exact_answer", "value": value})
+    return parse_criteria(tuple(raw))
 
 
 def _build_engine() -> RuntimeEngine:

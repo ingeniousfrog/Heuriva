@@ -6,9 +6,9 @@
 
 Heuriva 是一个 Python CLI 形态的认知运行时，用来观察一个冻结权重的语言模型在显式状态、动态操作选择和可持久化轨迹帮助下，如何一步一步解决任务。
 
-v0.5 保留 v0.3 的三操作质量闭环与 v0.4 的 evaluation corpus/suite，并增加受控 fresh judging：`heuriva eval --judge`、独立 eval run 持久化、disagreement/promotion 报告，以及 VERIFY 设计门槛结论。
+v0.6 在 v0.5 judging/suite 栈之上增加 **Task Contract Fidelity**：结构化 criterion kinds（`must_include` / `must_not_include` / `exact_answer`），并保持旧版裸字符串 `--criterion` 兼容，让 deterministic completion 能抓住原先被误当成 pipeline leak 的合同噪声。
 
-v0.5 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
+v0.6 仍只使用 `ANALYZE`、`SEARCH`、`ANSWER`。fresh judge 结果是带 provenance 的 opt-in 模型评估，不会改写原 trajectory，也不能当成客观正确率证明。fake/synthetic suite 结果只是回归信号，不是产品证明。
 
 Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK，而是证明一条可检查的最小闭环：
 
@@ -19,10 +19,11 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 用户可以通过 CLI 查看简洁 trace，也可以用 `--trace` 或 `show` 检查细节。
 - v0.3 质量信号可以通过 corpus 与 `eval-suite` 跨 case 复验。
 - v0.5 可对 saved trajectory 做显式 opt-in fresh judging，并报告 disagreement。
+- v0.6 可用结构化 TaskContract 声明精确完成合同，并在 ANSWER / assessor 两侧保持一致。
 
 ## 当前状态
 
-发布定性：v0.5 在 v0.4 corpus/suite 之上实现了受控 fresh judging 与 promotion/VERIFY gate 报告。Post-v0.5 已在本地 ignored checklist 中积累 live disagreement 证据，结论仍是 `recommend_enforce=false`、`enter_verify_design=false`。默认 quality mode 仍是 `observe`；本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
+发布定性：v0.6 实现了结构化 TaskContract criteria，以及 exact-answer / must-not-include / legacy-string 的离线 harness 覆盖。默认 quality mode 仍是 `observe`；`recommend_enforce` 与 `enter_verify_design` 仍为 false，除非 §54 门槛被单独满足并记录。本地开发目录里的 `docs/` 有 roadmap 和 promotion 笔记，默认不上传 GitHub。live checklist 仍是 Git ignored 的本地文件，因为里面有机器相关 task IDs。
 
 这个仓库当前已经实现：
 
@@ -32,7 +33,9 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 显式 opt-in 的 `heuriva eval --judge`：带 provenance、disagreement bucket、promotion 建议、VERIFY gate；eval run 与 trajectory 分表保存
 - 默认离线的 `heuriva eval-suite` / `heuriva eval-suite --json`
 - 跨 case 聚合报告：pass/fail/missing/skipped、evidence level 分层、search/citation/completion 汇总、promotion 统计与 VERIFY gate
-- forced harness：forbidden-search、duplicate-query、enforce block、bounded repair、citation 与 completion 分离
+- forced harness：forbidden-search、duplicate-query、enforce block、bounded repair、citation 与 completion 分离、`exact_answer` 多余文本、`must_not_include`、legacy 字符串 criterion 兼容
+- 结构化 task criteria：`must_include` / `must_not_include` / `exact_answer`（CLI flag 与 `kind:value` DSL；裸 `--criterion` 仍可用）
+- 按 kind 的确定性 completion assessment（结果带 kind/reason）；ANSWER prompt 展示同一份结构化合同
 - 通过 `heuriva --version` 和 `heuriva doctor` 查看版本
 - `~/.heuriva/` 下的本地配置
 - OpenAI-compatible 非流式 `/v1/chat/completions` client
@@ -50,7 +53,7 @@ Heuriva 的重点不是做一个通用 Agent 框架，也不是先做 Python SDK
 - 确定性 task-level completion assessment：支持 `off`/`observe`/`enforce`，限制 repair 次数，并覆盖少量常见中英文质量词等价匹配
 - `llm.max_retries` 控制的模型请求 retry，并记录 `attempt_count`
 - search timeout 分类、stale running task 诊断和 opt-in live smoke tests
-- 基于 fake model/search 的 v0.1 到 v0.5 自动化测试
+- 基于 fake model/search 的 v0.1 到 v0.6 自动化测试
 
 当前明确没有实现：
 
@@ -156,6 +159,9 @@ heuriva run --trace "分析这个项目是否值得做成产品"
 heuriva run --json "分析这个项目是否值得做成产品"
 heuriva run --criterion "提到取舍" --search-policy forbidden \
   "只基于本地项目方向做说明，不访问 Web"
+heuriva run --criterion-exact 'OK' "只返回 OK，不要其他文字。"
+heuriva run --criterion 'exact_answer:OK' --criterion-must-not 'SECRET' \
+  "只返回 OK"
 ```
 
 长任务会把实时进度输出到 stderr。使用 `--json` 时，stdout 仍只保留最终机器可读 JSON，方便脚本解析；如果不需要实时状态，可以加 `--no-progress` 关闭。
@@ -290,13 +296,13 @@ SEARCH decision 需要带 `query`、`evidence_need`、`expected_signal` 和 `sou
 .venv/bin/heuriva eval-suite --json
 ```
 
-自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、bounded completion repair、常见中英文 criterion 匹配、只读 eval 输出、eval corpus schema、离线 eval-suite 报告、stored-live missing/summary 行为，以及多条 fake runtime 路径：
+自动化测试覆盖 schema 不可变性、配置优先级、secret redaction、OpenAI-compatible client 错误处理、controller malformed JSON 修复、controller `success_criteria` 规范化、router 分离、state patch 应用、SQLite rollback、CLI setup/doctor、run 实时进度不会污染 JSON stdout、loop guard、state delta、citation validation/repair、model retry、search timeout、stale task 诊断、task contract、search guard、evidence relevance 对账、eval evidence 不重复计数、completion enforce 模式、bounded completion repair、常见中英文 criterion 匹配、结构化 `exact_answer` / `must_not_include` / legacy 字符串 criterion、只读 eval 输出、eval corpus schema、离线 eval-suite 报告、stored-live missing/summary 行为，以及多条 fake runtime 路径：
 
 - `ANALYZE -> SEARCH -> ANSWER`
 - `ANALYZE -> ANSWER`
 - `SEARCH -> ANSWER(validation error) -> ANSWER`
 
-当前自动化结果为 80 passed、2 skipped live tests。package build 生成 `heuriva-0.5.0` sdist 和 wheel。这证明 v0.5 fresh judging / eval-run 持久化 / disagreement 与 VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
+当前自动化结果为 89 passed、2 skipped live tests。package build 生成 `heuriva-0.6.0` sdist 和 wheel。这证明 v0.6 Task Contract Fidelity 与既有 fresh judging / VERIFY gate 在 fake harness 下可复验，但不证明真实模型质量、真实搜索质量或 Cursor-compatible endpoint 稳定性。
 
 真实验收应单独记录，并和自动化测试分开看。`doctor --probe` 成功只代表最小协议路径可用，不等同于完整多步任务 E2E 已验证。如果本地或 Cursor-compatible 模型冷启动较慢，可以用 `--probe-timeout 30` 放宽 doctor 探针的读取超时。
 
@@ -309,13 +315,12 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 
 ## 接下来更适合做什么
 
-Post-v0.5 已完成；开闸结论仍是 observe 默认、VERIFY 关闭。下一产品版本是 **v0.6 Task Contract Fidelity**（规划中，见本地 `plan.md` §55–§59 与 `docs/roadmap-v0.6.md`）：用结构化 criterion（如 `exact_answer` / `must_not_include`）消掉合同噪声，而不是急着加 VERIFY。
+v0.6 Task Contract Fidelity 已落地。默认仍是 observe，不默认打开 VERIFY。只有在合同层已充分、且仍有 ≥2 个不可用 TaskContract / SEARCH / ANSWER / repair 修复的真实 leak 时，再讨论 VERIFY；默认 semantic enforce 仍受 §54 约束（见本地 `plan.md` §54 / §58 与 `docs/promotion-rules-v0.6.md`）。
 
 优先级：
 
-1. 实现并向后兼容落地结构化 TaskContract / criterion kinds。
-2. 离线 harness 覆盖 exact_answer 多余文本失败等回归。
-3. 在 **8765** Cursor-compatible endpoint 上做 v0.6 live checklist。
-4. 只有在合同层已充分、且仍有 ≥2 个不可修复真实 leak 时，再讨论 VERIFY；默认 semantic enforce 仍受 §54 约束。
+1. 在 **8765** Cursor-compatible endpoint 上完成 / 更新 v0.6 live checklist。
+2. 继续用结构化合同消掉合同设计噪声，避免把可修 leak 记成 VERIFY 证据。
+3. 只有门槛满足时再讨论 VERIFY 或窄域 enforce；禁止把通用 LLM judge 做成默认 completion。
 
 一句话：先把任务合同做准，再谈更严质量模式或新 operator。

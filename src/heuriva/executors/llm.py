@@ -113,6 +113,10 @@ def _answer_messages(decision: Decision, state: CognitiveState) -> list[dict[str
     payload = {
         "goal": state.goal,
         "task_contract": state.task_contract.model_dump(mode="json"),
+        "structured_criteria": [
+            {"kind": item.kind.value, "value": item.value, "display": item.display()}
+            for item in state.task_contract.criteria
+        ],
         "constraints": state.constraints,
         "objective": decision.objective,
         "success_criteria": decision.success_criteria,

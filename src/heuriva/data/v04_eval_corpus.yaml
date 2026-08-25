@@ -1,4 +1,4 @@
-version: "0.5"
+version: "0.6"
 cases:
   - id: forbidden_search_guard
     kind: known_good
@@ -82,6 +82,42 @@ cases:
       disagreement_bucket: manual_review_needed
       judge_verdict: insufficient_evidence
     notes: "Fake judge harness; not live model behavior and not product proof."
+
+  - id: exact_answer_extra_text
+    kind: known_bad
+    evidence_level: fake_integration
+    prompt: "Return exactly OK and no other text."
+    criteria: ["exact_answer:OK"]
+    harness: exact_answer_extra_text
+    expected_quality_signal: "exact_answer fails when the answer has extra text (Post-v0.5 leak class)"
+    expected:
+      status: done
+      completion_verdict: fail
+    notes: "Contract fidelity regression; not VERIFY evidence."
+
+  - id: must_not_include
+    kind: known_bad
+    evidence_level: fake_integration
+    prompt: "Return a status without secrets."
+    criteria:
+      - "must_include:OK"
+      - "must_not_include:SECRETTOKEN"
+    harness: must_not_include
+    expected_quality_signal: "must_not_include fails when forbidden content appears"
+    expected:
+      status: done
+      completion_verdict: fail
+
+  - id: legacy_string_criterion
+    kind: known_good
+    evidence_level: fake_integration
+    prompt: "Explain safety"
+    criteria: ["mention safety"]
+    harness: legacy_string_criterion
+    expected_quality_signal: "legacy bare-string --criterion still assesses as must_include"
+    expected:
+      status: done
+      completion_verdict: pass
 
   - id: stored_live_relevance_readback
     kind: known_good

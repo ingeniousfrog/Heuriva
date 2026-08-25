@@ -20,7 +20,6 @@ from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState, EvidenceItem
 from heuriva.core.state_patch import OperationResult, StatePatch
 from heuriva.core.task_contract import (
-    EvidenceRequirement,
     SearchPolicy,
     SourceScope,
     TaskContract,
@@ -34,14 +33,18 @@ from heuriva.testing.fakes import FakeController, FakeExecutor, make_answer_deci
 
 
 def test_task_contract_is_immutable_and_legacy_state_compatible() -> None:
-    contract = TaskContract(
-        criteria=(" Mention safety ", "Mention safety", ""),
-        search_policy=SearchPolicy.FORBIDDEN,
-        evidence_requirement=EvidenceRequirement.REQUIRED,
-        origin="user",
+    contract = TaskContract.model_validate(
+        {
+            "criteria": (" Mention safety ", "Mention safety", ""),
+            "search_policy": "forbidden",
+            "evidence_requirement": "required",
+            "origin": "user",
+        }
     )
 
-    assert contract.criteria == ("Mention safety",)
+    assert len(contract.criteria) == 1
+    assert contract.criteria[0].value == "Mention safety"
+    assert contract.criteria[0].kind.value == "must_include"
     assert contract.search_policy is SearchPolicy.FORBIDDEN
     with pytest.raises(ValidationError):
         contract.criteria = ()
@@ -303,9 +306,8 @@ def test_completion_assessment_matches_common_chinese_equivalents() -> None:
     state = CognitiveState.new(
         task_id="task-1",
         goal="Evaluate moderation policy",
-        task_contract=TaskContract(
+        task_contract=TaskContract.from_user(
             criteria=("mention safety", "mention tradeoffs"),
-            origin="user",
         ),
     )
 

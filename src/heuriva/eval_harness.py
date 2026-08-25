@@ -223,6 +223,73 @@ def harness_completion_enforce_repair(workdir: Path) -> HarnessOutcome:
     return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
 
 
+def harness_exact_answer_extra_text(workdir: Path) -> HarnessOutcome:
+    """Post-v0.5 leak class: exact_answer must fail when extra tokens appear."""
+    store = SQLiteStore(workdir / "memory.db")
+    engine = RuntimeEngine(
+        config=_config(
+            workdir,
+            quality={"completion_check_mode": "observe"},
+        ),
+        store=store,
+        controller=FakeController([make_answer_decision("Answer")]),
+        executors={
+            Operator.ANSWER: FakeExecutor(
+                "final",
+                final_answer="OK\nV03BLOCKTOKEN",
+            )
+        },
+    )
+    result = engine.run(
+        "Return exactly OK and no other text.",
+        criteria=("exact_answer:OK",),
+    )
+    return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
+
+
+def harness_must_not_include(workdir: Path) -> HarnessOutcome:
+    store = SQLiteStore(workdir / "memory.db")
+    engine = RuntimeEngine(
+        config=_config(
+            workdir,
+            quality={"completion_check_mode": "observe"},
+        ),
+        store=store,
+        controller=FakeController([make_answer_decision("Answer")]),
+        executors={
+            Operator.ANSWER: FakeExecutor(
+                "final",
+                final_answer="Status is OK but also SECRETTOKEN leaked.",
+            )
+        },
+    )
+    result = engine.run(
+        "Return a status without secrets.",
+        criteria=("must_include:OK", "must_not_include:SECRETTOKEN"),
+    )
+    return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
+
+
+def harness_legacy_string_criterion(workdir: Path) -> HarnessOutcome:
+    store = SQLiteStore(workdir / "memory.db")
+    engine = RuntimeEngine(
+        config=_config(
+            workdir,
+            quality={"completion_check_mode": "observe"},
+        ),
+        store=store,
+        controller=FakeController([make_answer_decision("Answer")]),
+        executors={
+            Operator.ANSWER: FakeExecutor(
+                "final",
+                final_answer="A safe answer that mentions safety clearly.",
+            )
+        },
+    )
+    result = engine.run("Explain safety", criteria=("mention safety",))
+    return HarnessOutcome(trajectory=store.get_trajectory(result.task_id))
+
+
 def harness_cited_but_off_task(workdir: Path) -> HarnessOutcome:
     from heuriva.runtime.answer_validation import validate_answer_citations
 
@@ -380,6 +447,9 @@ HARNESSES: dict[str, HarnessFn] = {
     "completion_enforce_repair": harness_completion_enforce_repair,
     "cited_but_off_task": harness_cited_but_off_task,
     "judge_manual_review_needed": harness_judge_manual_review_needed,
+    "exact_answer_extra_text": harness_exact_answer_extra_text,
+    "must_not_include": harness_must_not_include,
+    "legacy_string_criterion": harness_legacy_string_criterion,
 }
 
 

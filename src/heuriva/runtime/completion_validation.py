@@ -12,7 +12,12 @@ from heuriva.core.evaluation import (
 from heuriva.core.observation import ErrorInfo
 from heuriva.core.state import CognitiveState, FailureRecord
 from heuriva.core.state_patch import OperationResult, StatePatch
-from heuriva.core.task_contract import EvidenceRequirement, SearchPolicy
+from heuriva.core.task_contract import (
+    Criterion,
+    CriterionKind,
+    EvidenceRequirement,
+    SearchPolicy,
+)
 
 STOP_WORDS = {
     "about",
@@ -142,10 +147,11 @@ class CompletionValidator:
         )
         if not should_assess:
             return None
+        failed_labels = tuple(item.display() for item in contract.criteria)
         if not answer:
             return CompletionAssessment(
                 verdict=CompletionVerdict.FAIL,
-                failed_criteria=contract.criteria,
+                failed_criteria=failed_labels,
                 feedback="answer was empty",
             )
         if (
@@ -154,7 +160,7 @@ class CompletionValidator:
         ) and not state.evidence:
             return CompletionAssessment(
                 verdict=CompletionVerdict.INSUFFICIENT_EVIDENCE,
-                failed_criteria=contract.criteria,
+                failed_criteria=failed_labels,
                 feedback="task contract requires accepted evidence before final answer",
             )
         criterion_results = tuple(
@@ -184,31 +190,90 @@ class CompletionValidator:
     @staticmethod
     def _assess_criterion(
         *,
-        criterion: str,
+        criterion: Criterion,
         answer: str,
         state: CognitiveState,
     ) -> CriterionAssessment:
-        terms = _criterion_terms(criterion)
+        evidence_refs = tuple(item.id for item in state.evidence)
+        label = criterion.display()
+        kind = criterion.kind.value
+        if criterion.kind is CriterionKind.EXACT_ANSWER:
+            expected = _normalize_text(criterion.value, criterion.normalize)
+            actual = _normalize_text(answer, criterion.normalize)
+            if actual == expected:
+                return CriterionAssessment(
+                    criterion=label,
+                    kind=kind,
+                    verdict=CompletionVerdict.PASS,
+                    reason="answer exactly matches the required value",
+                    evidence_refs=evidence_refs,
+                )
+            return CriterionAssessment(
+                criterion=label,
+                kind=kind,
+                verdict=CompletionVerdict.FAIL,
+                reason="answer does not exactly match the required value",
+                evidence_refs=evidence_refs,
+            )
+        if criterion.kind is CriterionKind.MUST_NOT_INCLUDE:
+            if _forbidden_content_present(criterion.value, answer):
+                return CriterionAssessment(
+                    criterion=label,
+                    kind=kind,
+                    verdict=CompletionVerdict.FAIL,
+                    reason="answer contains forbidden criterion content",
+                    evidence_refs=evidence_refs,
+                )
+            return CriterionAssessment(
+                criterion=label,
+                kind=kind,
+                verdict=CompletionVerdict.PASS,
+                reason="answer does not contain forbidden criterion content",
+                evidence_refs=evidence_refs,
+            )
+        # must_include (including legacy bare-string criteria)
+        terms = _criterion_terms(criterion.value)
         haystack = answer.lower()
         if not terms:
             return CriterionAssessment(
-                criterion=criterion,
+                criterion=label,
+                kind=kind,
                 verdict=CompletionVerdict.PASS,
                 reason="criterion has no deterministic content terms",
-                evidence_refs=tuple(item.id for item in state.evidence),
+                evidence_refs=evidence_refs,
             )
         if any(term in haystack for term in terms):
             return CriterionAssessment(
-                criterion=criterion,
+                criterion=label,
+                kind=kind,
                 verdict=CompletionVerdict.PASS,
                 reason="answer contains a criterion term",
-                evidence_refs=tuple(item.id for item in state.evidence),
+                evidence_refs=evidence_refs,
             )
         return CriterionAssessment(
-            criterion=criterion,
+            criterion=label,
+            kind=kind,
             verdict=CompletionVerdict.FAIL,
             reason="answer does not contain a criterion term",
+            evidence_refs=evidence_refs,
         )
+
+
+def _normalize_text(text: str, normalize: tuple[str, ...]) -> str:
+    result = text
+    if "trim" in normalize:
+        result = result.strip()
+    if "collapse_whitespace" in normalize:
+        result = re.sub(r"\s+", " ", result.strip())
+    return result
+
+
+def _forbidden_content_present(value: str, answer: str) -> bool:
+    haystack = answer.lower()
+    needle = value.strip().lower()
+    if needle and needle in haystack:
+        return True
+    return any(term in haystack for term in _criterion_terms(value))
 
 
 def _criterion_terms(criterion: str) -> tuple[str, ...]:

@@ -111,7 +111,7 @@ def _assess_source(
         return CandidateAssessment(
             rank=source.rank or 1,
             verdict=RelevanceVerdict.RELEVANT,
-            supports_criteria=state.task_contract.criteria,
+            supports_criteria=tuple(item.display() for item in state.task_contract.criteria),
             reason="relevance assessment is disabled",
             assessment_origin="off",
         )
@@ -139,9 +139,9 @@ def _assess_source(
     terms = _quality_terms(state, params)
     matches = tuple(term for term in terms if term in haystack)
     supported = tuple(
-        criterion
+        criterion.display()
         for criterion in state.task_contract.criteria
-        if _criterion_has_match(criterion, haystack)
+        if _criterion_has_match(criterion.value, haystack)
     )
     if len(matches) >= 2 or supported:
         verdict = RelevanceVerdict.RELEVANT
@@ -173,7 +173,7 @@ def _quality_terms(state: CognitiveState, params: SearchParams) -> tuple[str, ..
     text = " ".join(
         (
             state.goal,
-            " ".join(state.task_contract.criteria),
+            " ".join(item.value for item in state.task_contract.criteria),
             params.query,
             params.evidence_need,
             params.expected_signal,

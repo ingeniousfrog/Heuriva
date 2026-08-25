@@ -15,7 +15,12 @@ from heuriva.core.observation import Observation, ObservationKind, ObservationSt
 from heuriva.core.operator import Operator
 from heuriva.core.state import CognitiveState, StateStatus
 from heuriva.core.state_patch import OperationResult
-from heuriva.core.task_contract import EvidenceRequirement, SearchPolicy, TaskContract
+from heuriva.core.task_contract import (
+    CriterionInput,
+    EvidenceRequirement,
+    SearchPolicy,
+    TaskContract,
+)
 from heuriva.redaction import redact_text
 from heuriva.runtime.completion_validation import CompletionValidationResult, CompletionValidator
 from heuriva.runtime.executor_router import ExecutorRouter
@@ -91,7 +96,7 @@ class RuntimeEngine:
         *,
         trace: bool = False,
         progress: ProgressCallback | None = None,
-        criteria: tuple[str, ...] = (),
+        criteria: tuple[CriterionInput, ...] = (),
         search_policy: SearchPolicy | str = SearchPolicy.AUTO,
         evidence_requirement: EvidenceRequirement | str = EvidenceRequirement.OPTIONAL,
     ) -> RuntimeResult:

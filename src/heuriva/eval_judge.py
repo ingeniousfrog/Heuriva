@@ -185,6 +185,19 @@ class FreshJudge:
         ]
 
 
+def _format_criterion_for_judge(item: object) -> str | None:
+    if isinstance(item, dict):
+        kind = str(item.get("kind") or "").strip()
+        value = str(item.get("value") or "").strip()
+        if kind and value:
+            return f"{kind}:{value}"
+        if value:
+            return value
+        return None
+    text = str(item).strip()
+    return text or None
+
+
 def build_judge_payload(
     trajectory_data: dict[str, Any],
     deterministic: DeterministicSignals,
@@ -200,7 +213,10 @@ def build_judge_payload(
         contract = first_before.get("task_contract") or {}
         raw_criteria = contract.get("criteria") or ()
         if isinstance(raw_criteria, (list, tuple)):
-            criteria = [str(item) for item in raw_criteria if str(item).strip()]
+            for item in raw_criteria:
+                formatted = _format_criterion_for_judge(item)
+                if formatted:
+                    criteria.append(formatted)
         evidence = first_before.get("evidence") or ()
         # Prefer final state evidence if present.
         last_after = steps[-1].get("state_after", {})

@@ -5,7 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from heuriva.core.common import non_empty
-from heuriva.core.task_contract import EvidenceRequirement, SearchPolicy
+from heuriva.core.task_contract import Criterion, EvidenceRequirement, SearchPolicy, parse_criteria
 
 
 class RelevanceVerdict(StrEnum):
@@ -46,11 +46,12 @@ class CriterionAssessment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     criterion: str
+    kind: str = "must_include"
     verdict: CompletionVerdict
     reason: str
     evidence_refs: tuple[str, ...] = ()
 
-    @field_validator("criterion", "reason")
+    @field_validator("criterion", "kind", "reason")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         return non_empty(value, "criterion assessment field")
@@ -141,7 +142,7 @@ class EvalCorpusCase(BaseModel):
     prompt: str
     evidence_level: EvidenceLevel
     kind: CaseKind = CaseKind.KNOWN_GOOD
-    criteria: tuple[str, ...] = ()
+    criteria: tuple[Criterion, ...] = ()
     search_policy: SearchPolicy = SearchPolicy.AUTO
     evidence_requirement: EvidenceRequirement = EvidenceRequirement.OPTIONAL
     expected_quality_signal: str
@@ -155,15 +156,10 @@ class EvalCorpusCase(BaseModel):
     def _non_empty(cls, value: str) -> str:
         return non_empty(value, "eval corpus case field")
 
-    @field_validator("criteria")
+    @field_validator("criteria", mode="before")
     @classmethod
-    def _clean_criteria(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        cleaned: list[str] = []
-        for value in values:
-            stripped = value.strip()
-            if stripped and stripped not in cleaned:
-                cleaned.append(stripped)
-        return tuple(cleaned)
+    def _clean_criteria(cls, values: object) -> tuple[Criterion, ...]:
+        return parse_criteria(values)
 
     @field_validator("task_id", "harness")
     @classmethod

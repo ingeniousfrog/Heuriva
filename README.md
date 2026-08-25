@@ -4,25 +4,24 @@
 
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.5 keeps the
-v0.3 three-operator quality loop and the v0.4 evaluation corpus/suite, and adds
-opt-in fresh judging: `heuriva eval --judge`, eval-run persistence, disagreement
-and promotion reports, and an explicit VERIFY design gate.
+Heuriva is a Python CLI cognitive runtime for language models. v0.6 adds Task
+Contract Fidelity on top of the v0.5 judging/suite stack: structured criterion
+kinds (`must_include`, `must_not_include`, `exact_answer`) with backward-compatible
+legacy `--criterion` strings, so deterministic completion can catch contract
+mismatches that previously looked like pipeline leaks.
 
-v0.5 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. Fresh judge verdicts are
+v0.6 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. Fresh judge verdicts are
 opt-in model assessments with provenance; they do not overwrite trajectories and
 are not objective proof of answer correctness. Fake and synthetic suite results
 remain regression signals, not product proof.
 
 ## Current Status
 
-Release status: v0.5 implements opt-in fresh judging and promotion/VERIFY gate
-reports on top of the v0.4 corpus/suite. Post-v0.5 local live evidence (ignored
-checklists under `docs/`) accumulated disagreement samples and kept both
-`recommend_enforce` and `enter_verify_design` false. Quality modes stay at
-`observe` by default; see the local promotion notes under `docs/` on a
-development checkout. Live checklists remain local-only and ignored by Git
-because they contain machine-specific task IDs.
+Release status: v0.6 implements structured TaskContract criteria and offline
+harness coverage for exact-answer / must-not-include / legacy-string fidelity.
+Defaults remain `observe`; `recommend_enforce` and `enter_verify_design` stay
+false unless §54 thresholds are separately met. Live checklists remain
+local-only and ignored by Git because they contain machine-specific task IDs.
 
 Implemented in this repository:
 
@@ -38,7 +37,12 @@ Implemented in this repository:
   separation, search/citation/completion signal rollups, promotion stats, and
   VERIFY gate status
 - Forced harness coverage for forbidden-search, duplicate-query, enforce block,
-  bounded repair, and citation-versus-completion separation
+  bounded repair, citation-versus-completion separation, `exact_answer` extra
+  text, `must_not_include`, and legacy string criterion compatibility
+- Structured task criteria: `must_include`, `must_not_include`, `exact_answer`
+  (CLI flags and `kind:value` DSL; bare `--criterion` strings still work)
+- Deterministic completion assessment by criterion kind, with kind/reason on
+  criterion results; ANSWER prompts surface the same structured contract
 - Version visibility through `heuriva --version` and `heuriva doctor`
 - Local config under `~/.heuriva/`
 - OpenAI-compatible non-streaming `/v1/chat/completions` client
@@ -71,7 +75,7 @@ Implemented in this repository:
   `attempt_count` metadata
 - Search timeout classification, stale running task diagnostics, and opt-in live
   smoke tests
-- Automated fake model/search tests for core v0.1 through v0.5 runtime and eval
+- Automated fake model/search tests for core v0.1 through v0.6 runtime and eval
   paths
 
 Not implemented:
@@ -122,6 +126,9 @@ heuriva run --trace "Analyze whether this project should become a product"
 heuriva run --json "Analyze whether this project should become a product"
 heuriva run --criterion "mention the tradeoffs" --search-policy forbidden \
   "Explain the local project direction without web search"
+heuriva run --criterion-exact 'OK' "Return exactly OK and no other text."
+heuriva run --criterion 'exact_answer:OK' --criterion-must-not 'SECRET' \
+  "Return exactly OK"
 ```
 
 Long-running tasks stream live progress to stderr. When `--json` is used,
@@ -313,14 +320,15 @@ citation validation and repair, model retry accounting, search timeout
 classification, stale task diagnostics, task contracts, search guards, evidence
 relevance accounting, non-duplicated eval evidence counts, completion enforce
 mode, bounded completion repair, common Chinese/English criterion matching,
+structured `exact_answer` / `must_not_include` / legacy string criteria,
 read-only eval output, opt-in `--judge` provenance/disagreement persistence,
 eval corpus schema, offline eval-suite reports, stored-live missing/summary
 behavior, SQLite schema migration to `eval_runs`, and dynamic runtime paths
 including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
 `SEARCH -> ANSWER(validation error) -> ANSWER`.
 
-The current automated suite reports 80 passed and 2 skipped live tests. The
-0.5.0 wheel and sdist build locally.
+The current automated suite reports 89 passed and 2 skipped live tests. The
+0.6.0 wheel and sdist build locally.
 
 
 ```bash
@@ -334,15 +342,14 @@ does not prove a full multi-step product run or search quality. Use
 `--probe-timeout` when a local or Cursor-compatible model needs more than the
 default quick probe timeout to return its first token.
 
-The pytest live smoke files are opt-in and remain skipped by default. v0.5 live
+The pytest live smoke files are opt-in and remain skipped by default. v0.6 live
 acceptance should be recorded in the ignored local checklist; it is not implied
 by the fake suite or the package build.
 
-## Planned Next: v0.6
+## Planned Next
 
-Post-v0.5 evidence kept enforce/VERIFY gates closed. The next planned product
-version is **Task Contract Fidelity** (structured criteria such as
-`exact_answer` / `must_not_include`) so contract-design noise is not mistaken
-for VERIFY leaks. See local `plan.md` §55–§59 and `docs/roadmap-v0.6.md` on a
-development checkout. Defaults remain `observe`; no VERIFY operator is planned
-as a v0.6 default.
+v0.6 Task Contract Fidelity is implemented. Defaults remain `observe`; no
+VERIFY operator ships by default. Revisit VERIFY design only after adequate
+contracts still leave ≥2 distinct non-repairable live leaks (see local
+`plan.md` §54 / §58 and `docs/promotion-rules-v0.6.md` on a development
+checkout).
