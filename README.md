@@ -1,30 +1,61 @@
+<div align="center">
+
+<img src="src/heuriva/web/static/icon.png" width="72" height="72" alt="Heuriva" />
+
 # Heuriva
 
-[中文文档](README-CN.md)
+**Local-first cognitive runtime for language models**
 
-Heuriva is a Python **CLI cognitive runtime** for language models. It makes task
-solving explicit: structured state, one cognitive operator per step, and a full
-SQLite trajectory you can inspect, evaluate, and safely resume.
+Explicit state · dynamic operators · inspectable SQLite trajectories · safe resume
 
-It is not a general-purpose agent framework, not a messaging gateway, and not a
-library-first SDK. Day-to-day entry points are the `heuriva` CLI and the
-**localhost Session UI** (`heuriva serve`). An optional **Tauri** desktop
-installer wraps the same Session surface (shell + Python sidecar) — not a remote
-dashboard, not Feishu, and not VERIFY.
+<br/>
 
-## What it does
+[![CI](https://github.com/ingeniousfrog/Heuriva/actions/workflows/ci.yml/badge.svg)](https://github.com/ingeniousfrog/Heuriva/actions/workflows/ci.yml)
+[![Desktop release](https://img.shields.io/github/v/release/ingeniousfrog/Heuriva?label=desktop&color=007ec6)](https://github.com/ingeniousfrog/Heuriva/releases)
+![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-- Runs a task as a loop over three operators: `ANALYZE` → `SEARCH` → `ANSWER`
-  (chosen dynamically each step, not as a fixed pipeline).
-- Keeps an immutable `CognitiveState` and a stable `TaskContract`.
-- Separates **operator selection** (controller) from **executor routing**
-  (deterministic code).
-- Persists every committed step to local SQLite: state, decision, observation.
-- Validates citations against saved evidence; assesses completion against your
-  contract (default quality mode is observe, not silent rewrite).
-- Lets you run and resume from CLI **or** the localhost **Session UI**
-  (`heuriva serve`): send a goal, browse recent tasks, open detail, resume.
-  Optional Tauri `.dmg` / `.exe` installers are a thin shell around the same UI.
+<br/>
+
+[⬇ Download](#desktop-macos--windows) · [⚡ Quick start](#quick-start) · [📖 简体中文](README-CN.md)
+
+<br/>
+
+**English** · [简体中文](README-CN.md)
+
+</div>
+
+---
+
+Heuriva answers **“how did this model solve the task, step by step?”** with a small, inspectable cognitive loop: immutable state, one operator per step (`ANALYZE` / `SEARCH` / `ANSWER`), contract-aware completion checks, and a full local SQLite trajectory you can list, show, evaluate, and safely resume.
+
+It is **not** a multi-channel agent gateway, not a remote dashboard, and not a VERIFY-heavy product. Day-to-day entry points are the `heuriva` CLI and the **localhost Session UI** (`heuriva serve`). Optional **Tauri** installers are a thin shell around that same UI.
+
+| | Capability | What you get |
+|:--:|------------|--------------|
+| ▶ | **[Run](#quick-start)** | Dynamic loop over ANALYZE → SEARCH → ANSWER (not a fixed pipeline) |
+| 🖥 | **[Session UI](#session-ui)** | Localhost ask / progress / resume; optional desktop `.dmg` / `.exe` |
+| 📦 | **[Trajectory](#architecture)** | Every committed step persisted: state, decision, observation |
+| ↩ | **[Resume](#quick-start)** | Continue after Ctrl+C or failure — append only, never rewrite history |
+| ✓ | **[Contracts & eval](#quick-start)** | Structured criteria, citations vs evidence, read-only `eval` / opt-in judge |
+
+## Desktop (macOS / Windows)
+
+Installers are built by GitHub Actions and published on the [Releases](https://github.com/ingeniousfrog/Heuriva/releases) page.
+
+| Platform | Artifact |
+|----------|----------|
+| macOS Apple Silicon | `*.dmg` / `.app.zip` (`aarch64-apple-darwin`) |
+| macOS Intel | `*.dmg` / `.app.zip` (`x86_64-apple-darwin`) |
+| Windows x64 | NSIS `.exe` / MSI |
+
+```bash
+# Or build locally
+./scripts/build-desktop.sh           # macOS
+./scripts/build-desktop-windows.sh   # Windows (best effort)
+```
+
+Unsigned builds may trip Gatekeeper / SmartScreen on first open. Config and SQLite stay under `~/.heuriva` (same as CLI). See [`desktop/README.md`](desktop/README.md).
 
 ## Quick start
 
@@ -37,38 +68,18 @@ heuriva doctor --probe
 heuriva run --trace "Analyze whether this project should become a product"
 ```
 
-Default model config targets an OpenAI-compatible endpoint
-(`http://localhost:8765/v1`, `model: auto`). Point `HEURIVA_LLM_BASE_URL` /
-`HEURIVA_LLM_MODEL` at any compatible chat-completions service.
+Default model config targets an OpenAI-compatible endpoint (`http://localhost:8765/v1`, `model: auto`). Point `HEURIVA_LLM_BASE_URL` / `HEURIVA_LLM_MODEL` at any compatible chat-completions service.
 
 ```bash
-# Inspect / Session
-heuriva list                     # recent tasks: short id + status + goal
-heuriva list --json --limit 50
+heuriva list                     # recent tasks
 heuriva show --trace <task_id>
-heuriva serve                    # localhost Session UI (run / list / resume)
-heuriva serve --read-only        # inspector only (no writes)
+heuriva serve                    # Session UI (run / list / resume)
+heuriva serve --read-only        # inspector only
+heuriva resume <task_id>         # continue after interrupt / failure
 heuriva eval <task_id>           # read-only quality summary
 heuriva eval --judge <task_id>   # opt-in fresh model judge
-
-# Continue after Ctrl+C / failure (appends steps; never rewrites history)
-heuriva resume <task_id>
-
-# Offline regression suite (no network by default)
-heuriva eval-suite
+heuriva eval-suite               # offline regression suite
 ```
-
-Desktop installer (optional; same Session UI via Tauri + Python sidecar):
-
-```bash
-./scripts/build-desktop.sh           # macOS .dmg / .app
-./scripts/build-desktop-windows.sh   # Windows best effort
-```
-
-See `desktop/README.md`. Unsigned local builds may trip Gatekeeper / SmartScreen.
-
-GitHub Actions: push a `v*` tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`) to build
-macOS/Windows installers and publish a GitHub Release.
 
 Structured completion criteria (optional):
 
@@ -78,37 +89,46 @@ heuriva run --criterion 'must_include:tradeoffs' --search-policy forbidden \
   "Explain the local project direction without web search"
 ```
 
+## Session UI
+
+```bash
+heuriva serve   # http://127.0.0.1:8766/
+```
+
+- Ask a goal, watch live Activity progress, interrupt like Ctrl+C, resume on the home screen
+- Browse recent tasks and open full trajectory + final answer
+- Settings (LLM base URL / model) save to `~/.heuriva/config.yaml` and apply on the next run
+
+Desktop apps spawn the same `heuriva serve` sidecar and open a WebView — no remote multi-tenant surface.
+
 ## Architecture
 
 ```text
-CLI / config
+CLI / Session UI / Tauri shell
   → RuntimeEngine
   → CognitiveState + TaskContract
   → LLMController  (selects one operator)
   → ExecutorRouter (ANALYZE/ANSWER → llm, SEARCH → search)
-  → OperationResult → validation (search / citation / completion)
-  → StateUpdater   (immutable next state)
-  → SQLiteStore    (atomic step commit)
-  → show / eval / serve / resume
+  → validation (search / citation / completion)
+  → StateUpdater → SQLiteStore (atomic step commit)
+  → list / show / eval / resume
 ```
 
 ```mermaid
 flowchart TD
-    User["User / CLI"] --> CLI["heuriva.cli"]
-    CLI --> Config["config + ~/.heuriva"]
+    User["User"] --> CLI["CLI"]
+    User --> Session["Session UI / Tauri"]
     CLI --> Engine["RuntimeEngine"]
-    Config --> Model["OpenAI-compatible ModelClient"]
-    Config --> Search["SearchClient"]
-    Config --> Store["SQLiteStore"]
+    Session --> Engine
     Engine --> Controller["LLMController"]
-    Controller --> Model
     Engine --> Router["ExecutorRouter"]
+    Controller --> Model["OpenAI-compatible ModelClient"]
     Router --> LLMExec["LLMExecutor"]
     Router --> SearchExec["SearchExecutor"]
     LLMExec --> Model
-    SearchExec --> Search
-    Engine --> Store
-    Store --> Inspect["show / eval / serve / resume"]
+    SearchExec --> Search["SearchClient"]
+    Engine --> Store["SQLiteStore ~/.heuriva"]
+    Store --> Inspect["list / show / eval / resume"]
 ```
 
 ### Design invariants
@@ -117,9 +137,9 @@ flowchart TD
 | --- | --- |
 | State | Immutable Pydantic snapshots; patches cannot rewrite goal/contract |
 | Control | Controller picks operator only; router maps executors |
-| Evidence | Search candidates vs accepted evidence; only accepted evidence counts as progress |
+| Evidence | Only accepted evidence counts as progress |
 | Answers | Citation labels like `[S1]` must map to saved evidence |
-| Quality | Deterministic checks + optional model assessor/judge; defaults stay `observe` |
+| Quality | Deterministic checks + optional assessor/judge; defaults stay `observe` |
 | Persistence | One atomic SQLite transaction per committed step |
 | Resume | Reload last committed state; append new steps; never edit history |
 
@@ -133,53 +153,27 @@ flowchart TD
 | `executors/` | ANALYZE / ANSWER (LLM) and SEARCH |
 | `storage/` | SQLite trajectory + eval_runs |
 | `web/` | Localhost Session UI + trajectory inspector |
-| `desktop/` | Optional Tauri 2 shell + Python sidecar installer |
-
-## How to use (day-to-day)
-
-1. **`heuriva setup`** — create `~/.heuriva/config.yaml`, `.env`, and DB path.
-2. **`heuriva doctor`** — check config, schema, stale running tasks; `--probe` for a minimal chat call.
-3. **`heuriva run "..."`** — execute a new task; progress on stderr; `--json` keeps stdout clean.
-4. **Ctrl+C** — exits `130`, keeps committed steps as `interrupted`; resume with the printed task id.
-5. **`heuriva list`** — recent tasks with short id, status, step count, and goal summary.
-6. **`heuriva resume <task_id>`** — continue from the last committed state (rejects `done` unless `--force`).
-7. **`heuriva show` / `serve`** — inspect; `serve` is the Session UI (use `--read-only` for inspector-only).
-8. **`heuriva eval`** — summarize quality signals; `--judge` is explicit and does not rewrite the trajectory.
-9. **Desktop (optional)** — `./scripts/build-desktop.sh` builds a Tauri shell + sidecar installer.
-
-Config lives under `~/.heuriva/`. API keys stay in env vars (`HEURIVA_API_KEY`), never in YAML or SQLite. Search queries go to a third-party provider when search is enabled; snippets are treated as untrusted data.
+| `desktop/` | Optional Tauri 2 shell + Python sidecar |
 
 ## Heuriva vs OpenClaw vs Hermes Agent
-
-These solve different jobs. Heuriva is a **small, inspectable cognitive loop** for
-studying and controlling how a frozen-weight model solves tasks. OpenClaw and
-Hermes are broader **personal / multi-channel agent platforms**.
 
 | | Heuriva | OpenClaw | Hermes Agent |
 | --- | --- | --- | --- |
 | Primary job | Explicit cognitive runtime + trajectory science | Gateway / multi-channel control plane | Agent-first runtime with skill learning |
-| Interface | CLI + localhost Session UI (+ optional Tauri installer) | Many messaging channels + CLI | TUI / desktop (+ gateways) |
+| Interface | CLI + localhost Session UI (+ optional Tauri) | Many messaging channels + CLI | TUI / desktop (+ gateways) |
 | Operators / tools | Fixed trio: ANALYZE / SEARCH / ANSWER | Large skill + integration surface | Built-in tools + agent-written skills |
-| Memory story | SQLite trajectory (process evidence), not long-term “memory product” | Session / files / ecosystem memory | Persistent + procedural skill memory |
+| Memory story | SQLite trajectory (process evidence) | Session / files / ecosystem memory | Persistent + procedural skill memory |
 | Learning | Not a goal (recording ≠ learning) | Human-authored skills / marketplace | Self-improving procedural skills |
-| Model I/O | OpenAI-compatible chat completions | Model-agnostic | Model-agnostic |
-| Best fit | Reproducible task traces, contracts, eval, safe resume | Reach: put an agent where users already chat | Autonomy: agents that refine their own skills |
+| Best fit | Reproducible traces, contracts, eval, safe resume | Put an agent where users already chat | Agents that refine their own skills |
 
-**Use Heuriva when** you care about *why* each step was chosen, whether evidence
-was accepted, whether the answer met a contract, and whether you can resume
-without rewriting history.
+**Use Heuriva when** you care about *why* each step was chosen, whether evidence was accepted, whether the answer met a contract, and whether you can resume without rewriting history.
 
-**Use OpenClaw / Hermes when** you need messaging reach, large tool ecosystems,
-or agents that accumulate reusable skills over time. Heuriva deliberately does
-not try to replace those products.
-
-## Boundaries (intentionally out of scope)
+## Boundaries
 
 - No default `VERIFY` operator, no default semantic `enforce`, no default fresh judge
 - No MCP, multi-agent roles, shell/filesystem/Python executors, or URL crawling beyond search APIs
-- No remote multi-tenant dashboard (Session UI / `serve` is localhost-only; Tauri is a thin local shell)
+- No remote multi-tenant dashboard (Session / Tauri are localhost-only)
 - No procedural learning / policy lifecycle as a shipped product feature
-- Resume is not a full experiment replay lab or time-travel editor
 
 ## Development
 
@@ -192,12 +186,6 @@ Requires Python 3.11+.
 .venv/bin/mypy src tests
 .venv/bin/pytest
 .venv/bin/heuriva --version
-.venv/bin/heuriva eval-suite --json
-.venv/bin/heuriva serve --help
-.venv/bin/heuriva resume --help
-# optional packaging
-# ./scripts/build-sidecar.sh
-# ./scripts/build-desktop.sh
 ```
 
 Live LLM/search tests are opt-in:
@@ -207,4 +195,13 @@ HEURIVA_RUN_LIVE_LLM_TESTS=1 .venv/bin/pytest tests/live/test_live_llm.py
 HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 ```
 
-License: MIT.
+CI runs on every push/PR. Desktop installers publish when you push a `v*` tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## License
+
+MIT.
