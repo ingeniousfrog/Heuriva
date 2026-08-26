@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -347,10 +348,13 @@ def test_session_html_has_brand_and_composer(tmp_path: Path) -> None:
 
 
 def test_serve_help_mentions_session() -> None:
-    result = CliRunner().invoke(app, ["serve", "--help"])
+    result = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"}).invoke(
+        app, ["serve", "--help"]
+    )
     assert result.exit_code == 0
-    assert "Session" in result.stdout or "session" in result.stdout.lower()
-    assert "--read-only" in result.stdout
+    help_text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", result.stdout)
+    assert "Session" in help_text or "session" in help_text.lower()
+    assert "--read-only" in help_text
 
 
 def test_version_and_quality_defaults_v10() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -159,9 +160,11 @@ def test_answer_prompt_payload_includes_structured_criteria() -> None:
 
 
 def test_cli_run_help_documents_structured_criteria() -> None:
-    result = CliRunner().invoke(app, ["run", "--help"])
+    result = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"}).invoke(
+        app, ["run", "--help"]
+    )
     assert result.exit_code == 0
-    help_text = result.stdout
+    help_text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", result.stdout)
     assert "--criterion-exact" in help_text or "criterion-exact" in help_text
     assert "must-not" in help_text or "must_not" in help_text
     assert "exact_answer" in help_text

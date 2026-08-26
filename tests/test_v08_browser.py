@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 from urllib.error import HTTPError
@@ -155,11 +156,14 @@ def test_http_server_json_list_and_detail_are_read_only(tmp_path: Path) -> None:
 
 
 def test_serve_help_and_loopback_helper() -> None:
-    result = CliRunner().invoke(app, ["serve", "--help"])
+    result = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"}).invoke(
+        app, ["serve", "--help"]
+    )
     assert result.exit_code == 0
-    assert "--host" in result.stdout
-    assert "--port" in result.stdout
-    assert "--db" in result.stdout
+    help_text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", result.stdout)
+    assert "--host" in help_text
+    assert "--port" in help_text
+    assert "--db" in help_text
     assert is_loopback_host("127.0.0.1")
     assert is_loopback_host("localhost")
     assert not is_loopback_host("0.0.0.0")
