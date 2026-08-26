@@ -47,7 +47,6 @@ Heuriva 回答的是：**「这个模型是怎样一步一步解完这道题的�
 | 平台 | 产物 |
 |------|------|
 | macOS Apple Silicon | `*.dmg` / `.app.zip`（`aarch64-apple-darwin`） |
-| macOS Intel | `*.dmg` / `.app.zip`（`x86_64-apple-darwin`） |
 | Windows x64 | NSIS `.exe` / MSI |
 
 ```bash

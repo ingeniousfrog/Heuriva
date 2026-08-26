@@ -46,7 +46,6 @@ Installers are built by GitHub Actions and published on the [Releases](https://g
 | Platform | Artifact |
 |----------|----------|
 | macOS Apple Silicon | `*.dmg` / `.app.zip` (`aarch64-apple-darwin`) |
-| macOS Intel | `*.dmg` / `.app.zip` (`x86_64-apple-darwin`) |
 | Windows x64 | NSIS `.exe` / MSI |
 
 ```bash
