@@ -42,12 +42,12 @@ Heuriva 回答的是：**「这个模型是怎样一步一步解完这道题的�
 
 ## 桌面安装包 (macOS / Windows)
 
-最新版：**[v1.0.1](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.1)** · 全部产物见 [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
+最新版：**[v1.0.2](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.2)** · 全部产物见 [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
 
 | 平台 | 下载 |
 |------|------|
-| **macOS**（Apple Silicon） | [Heuriva_1.0.1_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva-aarch64-apple-darwin.app.zip) |
-| **Windows**（x64） | [Heuriva_1.0.1_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64_en-US.msi) |
+| **macOS**（Apple Silicon） | [Heuriva_1.0.2_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva_1.0.2_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva-aarch64-apple-darwin.app.zip) |
+| **Windows**（x64） | [Heuriva_1.0.2_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva_1.0.2_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva_1.0.2_x64_en-US.msi) |
 
 ### 安装 — macOS
 
@@ -218,8 +218,8 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 每次 push/PR 跑 CI。推送 `v*` 标签会构建并发布桌面安装包：
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 ## 许可证

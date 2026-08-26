@@ -41,12 +41,12 @@ It is **not** a multi-channel agent gateway, not a remote dashboard, and not a V
 
 ## Desktop (macOS / Windows)
 
-Latest: **[v1.0.1](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.1)** · all builds on [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
+Latest: **[v1.0.2](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.2)** · all builds on [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
 
 | Platform | Download |
 |----------|----------|
-| **macOS** (Apple Silicon) | [Heuriva_1.0.1_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva-aarch64-apple-darwin.app.zip) |
-| **Windows** (x64) | [Heuriva_1.0.1_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64_en-US.msi) |
+| **macOS** (Apple Silicon) | [Heuriva_1.0.2_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva_1.0.2_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva-aarch64-apple-darwin.app.zip) |
+| **Windows** (x64) | [Heuriva_1.0.2_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva_1.0.2_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.2/Heuriva_1.0.2_x64_en-US.msi) |
 
 ### Install — macOS
 
@@ -217,8 +217,8 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 CI runs on every push/PR. Desktop installers publish when you push a `v*` tag:
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 ## License

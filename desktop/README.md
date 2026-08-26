@@ -37,8 +37,8 @@ Sidecar only:
 - `Release desktop` builds macOS Apple Silicon + Windows installers on `v*` tags and uploads a GitHub Release.
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 Unsigned / ad-hoc builds are expected until Apple/Windows signing secrets are configured.

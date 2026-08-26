@@ -198,7 +198,7 @@ def test_extract_completion_assessment_keeps_kind() -> None:
 
 
 def test_version_and_quality_defaults() -> None:
-    assert __version__ == "1.0.1"
+    assert __version__ == "1.0.2"
     state = CognitiveState.new(
         task_id="browser-version",
         goal="x",

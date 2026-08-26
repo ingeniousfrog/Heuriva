@@ -362,7 +362,7 @@ def test_serve_help_mentions_session() -> None:
 
 
 def test_version_and_quality_defaults_v10() -> None:
-    assert __version__ == "1.0.1"
+    assert __version__ == "1.0.2"
     assert QualityConfig().completion_check_mode.value == "observe"
     state = CognitiveState.new(
         task_id="session-version",
