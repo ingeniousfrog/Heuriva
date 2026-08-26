@@ -7,8 +7,16 @@ import pytest
 
 from heuriva.clients.model import ModelClient, ModelClientError
 from heuriva.clients.search import SearchClient
-from heuriva.config import DEFAULT_BASE_URL, AppConfig, load_config, setup_config
+from heuriva.config import DEFAULT_BASE_URL, AppConfig, default_home, load_config, setup_config
 from heuriva.redaction import redact_text
+
+
+def test_default_home_prefers_home_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    isolated = tmp_path / "isolated-home"
+    isolated.mkdir()
+    monkeypatch.setenv("HOME", str(isolated))
+    monkeypatch.delenv("HEURIVA_HOME", raising=False)
+    assert default_home() == isolated
 
 
 def test_setup_creates_config_without_overwriting(tmp_path: Path) -> None:

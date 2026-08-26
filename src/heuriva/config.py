@@ -137,8 +137,21 @@ class SetupResult:
     created_env: bool
 
 
+def default_home() -> Path:
+    """Resolve Heuriva home directory.
+
+    Prefer HEURIVA_HOME, then HOME (so tests/CI on Windows can isolate via HOME),
+    then Path.home() (USERPROFILE on Windows).
+    """
+    for key in ("HEURIVA_HOME", "HOME"):
+        raw = os.environ.get(key)
+        if raw and raw.strip():
+            return Path(raw.strip()).expanduser()
+    return Path.home()
+
+
 def config_dir(home: Path | None = None) -> Path:
-    return (home or Path.home()) / CONFIG_DIR_NAME
+    return (home or default_home()) / CONFIG_DIR_NAME
 
 
 def default_config_text() -> str:
@@ -213,7 +226,7 @@ def load_config(
     home: Path | None = None,
     cli_overrides: dict[str, Any] | None = None,
 ) -> AppConfig:
-    root_home = home or Path.home()
+    root_home = home or default_home()
     raw: dict[str, Any] = {}
     path = config_dir(root_home) / "config.yaml"
     if path.exists():
@@ -246,7 +259,7 @@ def update_llm_settings(
     home: Path | None = None,
 ) -> AppConfig:
     """Update ~/.heuriva/config.yaml llm section (Session UI settings)."""
-    root_home = home or Path.home()
+    root_home = home or default_home()
     config_path = config_dir(root_home) / "config.yaml"
     if not config_path.exists():
         setup_config(home=root_home)

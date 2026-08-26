@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from heuriva.config import AppConfig, config_dir
+from heuriva.config import AppConfig, config_dir, default_home
 from heuriva.storage.sqlite import SQLiteStore
 
 
@@ -36,7 +36,7 @@ class DiagnosticsReport:
 
 
 def collect_diagnostics(config: AppConfig, *, home: Path | None = None) -> DiagnosticsReport:
-    root_home = home or Path.home()
+    root_home = home or default_home()
     stale = SQLiteStore.stale_running_summary(
         config.storage.sqlite_path,
         max_age_seconds=config.runtime.max_task_seconds,

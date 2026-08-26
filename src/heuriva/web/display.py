@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from heuriva.config import default_home
+
 
 @dataclass(frozen=True)
 class ProgressLogEntry:
@@ -21,17 +23,17 @@ class ProgressLogEntry:
 
 def display_storage_path(path: str | Path) -> str:
     """Show ~/.heuriva/memory.db instead of /Users/.../.heuriva/memory.db."""
-    default = Path("~/.heuriva/memory.db").expanduser()
+    home = default_home().resolve()
+    default = (home / ".heuriva" / "memory.db").resolve()
     try:
         resolved = Path(path).expanduser().resolve()
-        if resolved == default.resolve():
+        if resolved == default:
             return "~/.heuriva/memory.db"
-        home = Path.home().resolve()
         rel = resolved.relative_to(home)
         return f"~/{rel.as_posix()}"
     except (ValueError, OSError):
         text = str(path)
-        home_str = str(Path.home())
+        home_str = str(home)
         if text.startswith(home_str):
-            return "~" + text[len(home_str) :]
+            return "~" + text[len(home_str) :].replace("\\", "/")
         return text
