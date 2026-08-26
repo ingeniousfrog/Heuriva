@@ -339,6 +339,49 @@ def resume(
         raise typer.Exit(3)
 
 
+@app.command(name="list")
+def list_tasks(
+    limit: Annotated[
+        int,
+        typer.Option("--limit", min=1, max=500, help="Max number of recent tasks to show."),
+    ] = 20,
+    status: Annotated[
+        str | None,
+        typer.Option(
+            "--status",
+            help="Optional status filter: running, done, failed, interrupted, max_steps_reached.",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+) -> None:
+    try:
+        config = load_config()
+        browser = TrajectoryBrowser(SQLiteStore(config.storage.sqlite_path))
+        items = browser.list_tasks(limit=limit, offset=0)
+    except Exception as exc:
+        typer.echo(f"Could not list tasks: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    if status is not None:
+        wanted = status.strip().lower()
+        items = tuple(item for item in items if item.status.lower() == wanted)
+    if json_output:
+        typer.echo(json.dumps([item.to_dict() for item in items], ensure_ascii=False))
+        return
+    if not items:
+        typer.echo("No tasks found.", err=True)
+        return
+    for item in items:
+        short_id = item.task_id if len(item.task_id) <= 8 else f"{item.task_id[:8]}…"
+        updated = item.updated_at.replace("T", " ")[:19] if item.updated_at else "-"
+        typer.echo(
+            f"{short_id:<10}  {item.status:<18}  steps={item.step_count:<3}  "
+            f"{updated}  {item.goal_summary}"
+        )
+        typer.echo(f"           id={item.task_id}")
+
+
 @app.command()
 def show(
     task_id: Annotated[str, typer.Argument(help="Task ID to inspect.")],

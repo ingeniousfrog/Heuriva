@@ -39,6 +39,8 @@ Default model config targets an OpenAI-compatible endpoint
 
 ```bash
 # Inspect
+heuriva list                     # recent tasks: short id + status + goal
+heuriva list --json --limit 50
 heuriva show --trace <task_id>
 heuriva serve                    # localhost read-only UI
 heuriva eval <task_id>           # read-only quality summary
@@ -108,7 +110,7 @@ flowchart TD
 
 | Area | Responsibility |
 | --- | --- |
-| `cli.py` | `setup`, `doctor`, `run`, `resume`, `show`, `eval`, `eval-suite`, `serve` |
+| `cli.py` | `setup`, `doctor`, `run`, `resume`, `list`, `show`, `eval`, `eval-suite`, `serve` |
 | `runtime/` | Loop, guards, validation, resume eligibility |
 | `controller/` | Structured operator selection + JSON repair |
 | `executors/` | ANALYZE / ANSWER (LLM) and SEARCH |
@@ -121,9 +123,10 @@ flowchart TD
 2. **`heuriva doctor`** — check config, schema, stale running tasks; `--probe` for a minimal chat call.
 3. **`heuriva run "..."`** — execute a new task; progress on stderr; `--json` keeps stdout clean.
 4. **Ctrl+C** — exits `130`, keeps committed steps as `interrupted`; resume with the printed task id.
-5. **`heuriva resume <task_id>`** — continue from the last committed state (rejects `done` unless `--force`).
-6. **`heuriva show` / `serve`** — inspect without re-running.
-7. **`heuriva eval`** — summarize quality signals; `--judge` is explicit and does not rewrite the trajectory.
+5. **`heuriva list`** — recent tasks with short id, status, step count, and goal summary.
+6. **`heuriva resume <task_id>`** — continue from the last committed state (rejects `done` unless `--force`).
+7. **`heuriva show` / `serve`** — inspect without re-running.
+8. **`heuriva eval`** — summarize quality signals; `--judge` is explicit and does not rewrite the trajectory.
 
 Config lives under `~/.heuriva/`. API keys stay in env vars (`HEURIVA_API_KEY`), never in YAML or SQLite. Search queries go to a third-party provider when search is enabled; snippets are treated as untrusted data.
 

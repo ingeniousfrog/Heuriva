@@ -28,6 +28,7 @@ def test_cli_help() -> None:
     assert "run" in result.stdout
     assert "serve" in result.stdout
     assert "resume" in result.stdout
+    assert "list" in result.stdout
 
 
 def test_cli_version() -> None:
@@ -308,3 +309,47 @@ def test_cli_resume_rejects_done_and_accepts_interrupted(
     payload = json.loads(accepted.stdout)
     assert payload["resumed"] is True
     assert payload["final_answer"] == "resumed-ok"
+
+
+def test_cli_list_shows_recent_tasks_with_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(app, ["setup"])
+    db_path = tmp_path / ".heuriva" / "memory.db"
+    store = SQLiteStore(db_path)
+    first = CognitiveState.new(task_id="task-list-1", goal="Explain product risks clearly")
+    store.create_task_with_trajectory(first, config_snapshot={})
+    store.finalize_task(
+        task_id=first.task_id,
+        final_state=first.terminal(status="done"),
+        status="done",
+        termination_reason="answer",
+        final_answer="ok",
+    )
+    second = CognitiveState.new(
+        task_id="task-list-2",
+        goal="A much longer goal text that should be summarized in the list view for humans",
+    )
+    store.create_task_with_trajectory(second, config_snapshot={})
+    store.finalize_task(
+        task_id=second.task_id,
+        final_state=second.terminal(status="interrupted"),
+        status="interrupted",
+        termination_reason="keyboard_interrupt",
+        final_answer=None,
+    )
+
+    human = runner.invoke(app, ["list", "--limit", "10"])
+    assert human.exit_code == 0
+    assert "task-list-2" in human.stdout
+    assert "interrupted" in human.stdout
+    assert "Explain product risks clearly" in human.stdout
+
+    filtered = runner.invoke(app, ["list", "--status", "done", "--json"])
+    assert filtered.exit_code == 0
+    rows = json.loads(filtered.stdout)
+    assert len(rows) == 1
+    assert rows[0]["task_id"] == "task-list-1"
+    assert rows[0]["goal_summary"]

@@ -30,6 +30,8 @@ heuriva run --trace "分析这个项目是否值得做成产品"
 
 ```bash
 # 检视
+heuriva list                     # 最近任务：缩略 id + status + goal
+heuriva list --json --limit 50
 heuriva show --trace <task_id>
 heuriva serve                    # 本机只读 UI
 heuriva eval <task_id>           # 只读质量摘要
@@ -99,7 +101,7 @@ flowchart TD
 
 | 区域 | 责任 |
 | --- | --- |
-| `cli.py` | `setup`、`doctor`、`run`、`resume`、`show`、`eval`、`eval-suite`、`serve` |
+| `cli.py` | `setup`、`doctor`、`run`、`resume`、`list`、`show`、`eval`、`eval-suite`、`serve` |
 | `runtime/` | 循环、guard、校验、resume 资格判定 |
 | `controller/` | 结构化 operator 选择与 JSON 修复 |
 | `executors/` | ANALYZE / ANSWER（LLM）与 SEARCH |
@@ -112,9 +114,10 @@ flowchart TD
 2. **`heuriva doctor`** — 检查配置、schema、stale running task；`--probe` 发最小 chat。
 3. **`heuriva run "..."`** — 跑新任务；进度在 stderr；`--json` 保证 stdout 干净。
 4. **Ctrl+C** — 退出码 `130`，已提交步骤保留为 `interrupted`；用打印出的 task id 续跑。
-5. **`heuriva resume <task_id>`** — 从最后提交状态继续（`done` 默认拒绝，除非 `--force`）。
-6. **`heuriva show` / `serve`** — 只读检视，不重跑。
-7. **`heuriva eval`** — 汇总质量信号；`--judge` 必须显式开启，且不改写原轨迹。
+5. **`heuriva list`** — 看最近任务的缩略 id、状态、步数与 goal 摘要。
+6. **`heuriva resume <task_id>`** — 从最后提交状态继续（`done` 默认拒绝，除非 `--force`）。
+7. **`heuriva show` / `serve`** — 只读检视，不重跑。
+8. **`heuriva eval`** — 汇总质量信号；`--judge` 必须显式开启，且不改写原轨迹。
 
 配置在 `~/.heuriva/`。API key 只走环境变量（`HEURIVA_API_KEY`），不进 YAML / SQLite。启用搜索时，query 会发给第三方搜索服务；摘要一律当作不可信外部数据。
 
