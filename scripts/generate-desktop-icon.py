@@ -76,6 +76,13 @@ def install_icons(source: Path) -> None:
     _write_png(img, 32, WEB_STATIC / "favicon.png")
     _write_png(img, 180, WEB_STATIC / "apple-touch-icon.png")
 
+    ico_sizes = [(s, s) for s in (16, 32, 48, 64, 128, 256)]
+    img.save(
+        TAURI_ICONS / "icon.ico",
+        format="ICO",
+        sizes=ico_sizes,
+    )
+
     try:
         _write_icns(TAURI_ICONS / "icon.png", TAURI_ICONS / "icon.icns")
     except (FileNotFoundError, subprocess.CalledProcessError) as exc:

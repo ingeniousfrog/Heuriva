@@ -31,6 +31,18 @@ Sidecar only:
 ./scripts/build-sidecar.sh
 ```
 
+## GitHub Actions release
+
+- `CI` runs pytest on push/PR to `main`.
+- `Release desktop` builds macOS (arm64 + x86_64) and Windows installers on `v*` tags and uploads a GitHub Release.
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Unsigned / ad-hoc builds are expected until Apple/Windows signing secrets are configured.
+
 ## Notes
 
 - Unsigned / ad-hoc local distribution is expected for v1.0.

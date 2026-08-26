@@ -54,6 +54,9 @@ heuriva eval-suite
 
 详见 `desktop/README.md`。未签名本地包可能触发 Gatekeeper / SmartScreen。
 
+GitHub Actions：推送 `v*` 标签（例如 `git tag v1.0.0 && git push origin v1.0.0`）会构建
+macOS/Windows 安装包并发布 GitHub Release。
+
 结构化完成合同（可选）：
 
 ```bash

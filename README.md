@@ -67,6 +67,9 @@ Desktop installer (optional; same Session UI via Tauri + Python sidecar):
 
 See `desktop/README.md`. Unsigned local builds may trip Gatekeeper / SmartScreen.
 
+GitHub Actions: push a `v*` tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`) to build
+macOS/Windows installers and publish a GitHub Release.
+
 Structured completion criteria (optional):
 
 ```bash

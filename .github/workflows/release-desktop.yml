@@ -1,0 +1,236 @@
+name: Release desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional release tag override (defaults to github.ref_name)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: pytest before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install and test
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pytest -q
+
+  build-macos:
+    name: Build macOS (${{ matrix.target }})
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-13
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python package + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install "pyinstaller>=6,<7" "pillow>=10"
+
+      - name: Ensure icons
+        run: python scripts/generate-desktop-icon.py
+
+      - name: Build sidecar
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/build-sidecar.sh "${{ matrix.target }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install desktop npm deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build Tauri (macOS)
+        working-directory: desktop
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/desktop/src-tauri/target
+        run: npm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${{ github.workspace }}/artifacts/macos-${{ matrix.target }}"
+          mkdir -p "$OUT"
+          BUNDLE="${{ github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          # Fallback when cargo writes to non-target-triple path on host builds
+          if [[ ! -d "$BUNDLE" ]]; then
+            BUNDLE="${{ github.workspace }}/desktop/src-tauri/target/release/bundle"
+          fi
+          if [[ -d "$BUNDLE/dmg" ]]; then
+            cp -f "$BUNDLE/dmg/"*.dmg "$OUT/" || true
+          fi
+          if [[ -d "$BUNDLE/macos" ]]; then
+            # Keep a zip of .app for runners without dmg output quirks
+            if compgen -G "$BUNDLE/macos/"*.app > /dev/null; then
+              ditto -c -k --sequesterRsrc --keepParent "$BUNDLE/macos/"*.app "$OUT/Heuriva-${{ matrix.target }}.app.zip"
+            fi
+          fi
+          ls -la "$OUT"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.target }}
+          path: artifacts/macos-${{ matrix.target }}/*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows (x86_64)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python package + PyInstaller
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install "pyinstaller>=6,<7" "pillow>=10"
+          python scripts/generate-desktop-icon.py
+
+      - name: Build sidecar
+        shell: bash
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/build-sidecar.sh x86_64-pc-windows-msvc
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install desktop npm deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build Tauri (Windows)
+        working-directory: desktop
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/desktop/src-tauri/target
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${{ github.workspace }}/artifacts/windows-x86_64"
+          mkdir -p "$OUT"
+          BUNDLE="${{ github.workspace }}/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
+          if [[ ! -d "$BUNDLE" ]]; then
+            BUNDLE="${{ github.workspace }}/desktop/src-tauri/target/release/bundle"
+          fi
+          if [[ -d "$BUNDLE/nsis" ]]; then
+            cp -f "$BUNDLE/nsis/"*.exe "$OUT/" || true
+          fi
+          if [[ -d "$BUNDLE/msi" ]]; then
+            cp -f "$BUNDLE/msi/"*.msi "$OUT/" || true
+          fi
+          ls -la "$OUT"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: artifacts/windows-x86_64/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          find release-assets -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.msi' \) -exec cp -f {} upload/ \;
+          ls -la upload
+          test "$(find upload -type f | wc -l)" -gt 0
+
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.tag }}" ]]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Heuriva ${{ steps.meta.outputs.tag }}
+          draft: false
+          prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
+          generate_release_notes: true
+          files: upload/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
