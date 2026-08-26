@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Heuriva",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "dev.heuriva.session",
   "build": {
     "frontendDist": "../dist",
@@ -38,12 +38,32 @@
       "binaries/heuriva-sidecar"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "dmg": {
+        "background": "images/dmg-background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
     },
     "windows": {
       "digestAlgorithm": "sha256",
       "certificateThumbprint": null,
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "images/nsis-header.bmp",
+        "sidebarImage": "images/nsis-sidebar.bmp"
+      }
     },
     "longDescription": "Heuriva local Session UI. Thin Tauri shell that starts a Python sidecar and opens the localhost Session page. Not a remote dashboard.",
     "shortDescription": "Heuriva local cognitive Session",

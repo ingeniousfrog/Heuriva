@@ -1,6 +1,6 @@
 [package]
 name = "heuriva-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "Heuriva local Session UI shell (Tauri)"
 authors = ["Heuriva contributors"]
 edition = "2021"

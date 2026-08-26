@@ -41,21 +41,30 @@ It is **not** a multi-channel agent gateway, not a remote dashboard, and not a V
 
 ## Desktop (macOS / Windows)
 
-Latest: **[v1.0.0](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.0)** · all builds on [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
+Latest: **[v1.0.1](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.1)** · all builds on [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
 
 | Platform | Download |
 |----------|----------|
-| **macOS** (Apple Silicon) | [Heuriva_1.0.0_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva-aarch64-apple-darwin.app.zip) |
-| **Windows** (x64) | [Heuriva_1.0.0_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64_en-US.msi) |
+| **macOS** (Apple Silicon) | [Heuriva_1.0.1_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva-aarch64-apple-darwin.app.zip) |
+| **Windows** (x64) | [Heuriva_1.0.1_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64_en-US.msi) |
 
-**Install (macOS):** open the dmg → drag **Heuriva** to Applications.  
-If Gatekeeper blocks an unsigned build, right-click → **Open**, or:
+### Install — macOS
+
+1. Open the `.dmg` → drag **Heuriva** onto **Applications**.
+2. First launch: right-click **Heuriva** → **Open** (unsigned builds trip Gatekeeper).
+
+If macOS says the app is **“damaged and can’t be opened”** (common after Safari/GitHub download quarantine), the package is fine — clear quarantine:
 
 ```bash
 xattr -cr /Applications/Heuriva.app
 ```
 
-**Install (Windows):** run the NSIS `.exe` (or MSI) and follow the wizard. SmartScreen may warn on first run.
+Then open again. (`-c` clears attributes; `-r` is recursive. Not `-xr`.)
+
+### Install — Windows
+
+1. Run `Heuriva_*_x64-setup.exe` (NSIS) or the `.msi`, then follow the wizard.
+2. If **SmartScreen** shows “Windows protected your PC”, choose **More info** → **Run anyway** (unsigned installer).
 
 Config and SQLite stay under `~/.heuriva` (same as CLI). See [`desktop/README.md`](desktop/README.md).
 
@@ -206,8 +215,8 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 CI runs on every push/PR. Desktop installers publish when you push a `v*` tag:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 ## License

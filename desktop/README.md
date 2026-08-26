@@ -34,17 +34,28 @@ Sidecar only:
 ## GitHub Actions release
 
 - `CI` runs pytest on push/PR to `main`.
-- `Release desktop` builds macOS (arm64 + x86_64) and Windows installers on `v*` tags and uploads a GitHub Release.
+- `Release desktop` builds macOS Apple Silicon + Windows installers on `v*` tags and uploads a GitHub Release.
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 Unsigned / ad-hoc builds are expected until Apple/Windows signing secrets are configured.
 
+### First-open notes (unsigned)
+
+**macOS:** drag Heuriva → Applications, then right-click → Open. If Gatekeeper says the app is “damaged”:
+
+```bash
+xattr -cr /Applications/Heuriva.app
+```
+
+**Windows:** if SmartScreen blocks the setup `.exe`, choose **More info** → **Run anyway**.
+
 ## Notes
 
-- Unsigned / ad-hoc local distribution is expected for v1.0.
+- Unsigned / ad-hoc local distribution is expected for v1.x.
 - Gatekeeper (macOS) / SmartScreen (Windows) may warn on first open.
 - Config and SQLite stay under `~/.heuriva` (same as CLI).
+- DMG background / NSIS sidebar assets live under `desktop/src-tauri/images/` (`scripts/generate-dmg-background.py`).

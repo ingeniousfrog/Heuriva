@@ -60,8 +60,10 @@ jobs:
           python -m pip install -e .
           python -m pip install "pyinstaller>=6,<7" "pillow>=10"
 
-      - name: Ensure icons
-        run: python scripts/generate-desktop-icon.py
+      - name: Ensure icons + installer art
+        run: |
+          python scripts/generate-desktop-icon.py
+          python scripts/generate-dmg-background.py
 
       - name: Build sidecar
         run: |
@@ -87,6 +89,8 @@ jobs:
         working-directory: desktop
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/desktop/src-tauri/target
+          # Let create-dmg apply window/background layout on GHA (normally skipped when CI=true).
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: npm run tauri build -- --target ${{ matrix.target }}
 
       - name: Collect artifacts
@@ -137,6 +141,7 @@ jobs:
           python -m pip install -e .
           python -m pip install "pyinstaller>=6,<7" "pillow>=10"
           python scripts/generate-desktop-icon.py
+          python scripts/generate-dmg-background.py
 
       - name: Build sidecar
         shell: bash

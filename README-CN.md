@@ -42,21 +42,30 @@ Heuriva 回答的是：**「这个模型是怎样一步一步解完这道题的�
 
 ## 桌面安装包 (macOS / Windows)
 
-最新版：**[v1.0.0](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.0)** · 全部产物见 [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
+最新版：**[v1.0.1](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.1)** · 全部产物见 [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
 
 | 平台 | 下载 |
 |------|------|
-| **macOS**（Apple Silicon） | [Heuriva_1.0.0_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva-aarch64-apple-darwin.app.zip) |
-| **Windows**（x64） | [Heuriva_1.0.0_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64_en-US.msi) |
+| **macOS**（Apple Silicon） | [Heuriva_1.0.1_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva-aarch64-apple-darwin.app.zip) |
+| **Windows**（x64） | [Heuriva_1.0.1_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.1/Heuriva_1.0.1_x64_en-US.msi) |
 
-**安装（macOS）：** 打开 dmg → 把 **Heuriva** 拖进 Applications。  
-未签名包若被 Gatekeeper 拦截：右键 → **打开**，或：
+### 安装 — macOS
+
+1. 打开 `.dmg` → 把 **Heuriva** 拖到 **Applications**。
+2. 首次打开：对 **Heuriva** 右键 → **打开**（未签名包会触发 Gatekeeper）。
+
+若提示应用**「已损坏，无法打开」**（Safari / GitHub 下载常见的隔离属性，不是真损坏），清除 quarantine：
 
 ```bash
 xattr -cr /Applications/Heuriva.app
 ```
 
-**安装（Windows）：** 运行 NSIS `.exe`（或 MSI）按向导安装；首次可能触发 SmartScreen。
+然后再打开。（`-c` 清除属性，`-r` 递归；不是 `-xr`。）
+
+### 安装 — Windows
+
+1. 运行 `Heuriva_*_x64-setup.exe`（NSIS）或 `.msi`，按向导安装。
+2. 若出现 **SmartScreen**「Windows 已保护你的电脑」：点 **更多信息** → **仍要运行**（未签名安装包）。
 
 配置与数据库仍在 `~/.heuriva`（与 CLI 相同）。详见 [`desktop/README.md`](desktop/README.md)。
 
@@ -207,8 +216,8 @@ HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 每次 push/PR 跑 CI。推送 `v*` 标签会构建并发布桌面安装包：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 ## 许可证
