@@ -6,6 +6,7 @@ import html
 import json
 from typing import Any
 
+from heuriva import __version__
 from heuriva.web.queries import TaskDetail, TaskListItem
 
 
@@ -120,10 +121,19 @@ body {
   height: 2.1rem;
   cursor: pointer;
   color: var(--muted);
-  font-size: 1.1rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 0;
 }
 .icon-btn:hover { border-color: #ccc; color: var(--ink); }
+.icon-btn svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
 .hero { text-align: center; margin-bottom: 1.25rem; }
 .hero h1 {
   margin: 0;
@@ -438,6 +448,66 @@ button.danger { background: var(--danger); }
   gap: 0.5rem;
   margin-top: 1rem;
 }
+.about-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4.5rem 1rem 1.5rem;
+  background: rgba(27, 27, 24, 0.28);
+}
+.about-modal.open { display: flex; }
+.about-dialog {
+  width: min(28rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.1rem 1.15rem;
+}
+.about-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.about-dialog-head h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.about-body {
+  font-size: 0.9rem;
+  color: var(--ink);
+  line-height: 1.55;
+}
+.about-body p { margin: 0 0 0.7rem; color: var(--muted); }
+.about-body ul {
+  margin: 0 0 0.85rem;
+  padding-left: 1.15rem;
+  color: var(--muted);
+}
+.about-body li { margin: 0.25rem 0; }
+.about-meta {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.25rem 0 0.85rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.84rem;
+}
+.about-meta a { color: var(--accent); font-weight: 600; }
+.about-meta .label { color: var(--muted); margin-right: 0.35rem; }
+.about-meta code {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
 .toast {
   position: fixed;
   right: 1rem;
@@ -505,7 +575,7 @@ _JS = r"""
 const HeurivaSession = (() => {
   const I18N = {
     en: {
-      tagline: "Local cognitive runtime — ask, inspect, resume safely.",
+      tagline: "Local cognitive workspace — ask, inspect trajectories, resume safely.",
       local_chip: "localhost session",
       new_task: "Ask Heuriva",
       goal_ph: "What should Heuriva solve?",
@@ -534,6 +604,20 @@ const HeurivaSession = (() => {
       settings_saved: "Saved — applies to the next run.",
       settings_open: "Open settings",
       settings_close: "Close settings",
+      about_title: "About Heuriva",
+      about_open: "About",
+      about_close: "Close about",
+      about_blurb: "A local-first workspace for language-model tasks with explicit steps, inspectable SQLite trajectories, and safe resume.",
+      about_guidelines_title: "Guidelines",
+      about_g1: "Localhost-only Session UI — not a remote multi-tenant dashboard.",
+      about_g2: "Each step picks one operator: ANALYZE, SEARCH, or ANSWER.",
+      about_g3: "Trajectory history is append-only; resume never rewrites past steps.",
+      about_g4: "No default VERIFY / semantic enforce; quality checks stay observe unless you opt in.",
+      about_github: "GitHub",
+      about_license: "License",
+      about_port: "Session port",
+      about_port_hint: "Default 8766 (desktop app + `heuriva serve`). Override with `heuriva serve --port`. LLM endpoint is separate (often :8765).",
+      about_version: "Version",
       enter_goal: "Enter a goal first.",
       force_confirm: "Force resume a done task? History is never rewritten.",
       copy_ok: "Copied task id",
@@ -547,7 +631,7 @@ const HeurivaSession = (() => {
       opening_result: "Opening full trajectory…",
     },
     zh: {
-      tagline: "本机认知运行时 — 提问、检视轨迹、安全续跑。",
+      tagline: "本机认知工作台 — 提问、检视轨迹、安全续跑。",
       local_chip: "本机会话",
       new_task: "向 Heuriva 提问",
       goal_ph: "想让 Heuriva 解决什么问题？",
@@ -557,7 +641,7 @@ const HeurivaSession = (() => {
       run: "运行",
       activity: "运行日志",
       activity_hint: "实时进度",
-      activity_empty: "任务运行时会在这里逐条刷出进度。",
+      activity_empty: "任务进行中时，进度会在这里逐条刷出。",
       clear_log: "清空",
       interrupt: "中断",
       interrupting: "正在中断…",
@@ -576,6 +660,20 @@ const HeurivaSession = (() => {
       settings_saved: "已保存 — 下一次运行生效。",
       settings_open: "打开设置",
       settings_close: "关闭设置",
+      about_title: "关于 Heuriva",
+      about_open: "关于",
+      about_close: "关闭关于",
+      about_blurb: "本机优先的语言模型工作台：步骤显式、轨迹可检视（SQLite）、中断后可安全续跑。",
+      about_guidelines_title: "使用约定",
+      about_g1: "Session UI 仅本机使用 — 不是远程多租户 dashboard。",
+      about_g2: "每一步只选一个操作：ANALYZE / SEARCH / ANSWER。",
+      about_g3: "轨迹只追加、不改写；续跑不会回头改历史。",
+      about_g4: "默认不开 VERIFY / 语义 enforce；质量检查默认 observe，需显式开启。",
+      about_github: "GitHub",
+      about_license: "许可证",
+      about_port: "会话端口",
+      about_port_hint: "默认 8766（桌面端与 `heuriva serve`）。可用 `heuriva serve --port` 改掉。LLM 端点另算（常见 :8765）。",
+      about_version: "版本",
       enter_goal: "请先输入任务目标。",
       force_confirm: "强制续跑已完成任务？历史不会被改写，只会追加步骤。",
       copy_ok: "已复制 task id",
@@ -674,6 +772,15 @@ const HeurivaSession = (() => {
     document.querySelectorAll(".lang-toggle button").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.lang === lang);
     });
+    const chip = document.querySelector(".chip[data-i18n='local_chip']");
+    if (chip) {
+      const port = location.port || "8766";
+      chip.textContent = `${t("local_chip")} · :${port}`;
+    }
+    const aboutPort = $("about-port-value");
+    if (aboutPort) {
+      aboutPort.textContent = location.port || "8766";
+    }
     syncSendButton(Boolean($("session-send") && $("session-send").disabled));
   }
 
@@ -941,6 +1048,7 @@ const HeurivaSession = (() => {
   function openSettings() {
     const modal = $("settings-modal");
     if (!modal) return;
+    closeAbout();
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
     $("settings-base-url")?.focus();
@@ -948,6 +1056,21 @@ const HeurivaSession = (() => {
 
   function closeSettings() {
     const modal = $("settings-modal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  function openAbout() {
+    const modal = $("about-modal");
+    if (!modal) return;
+    closeSettings();
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeAbout() {
+    const modal = $("about-modal");
     if (!modal) return;
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
@@ -982,8 +1105,16 @@ const HeurivaSession = (() => {
     $("settings-modal")?.addEventListener("click", (event) => {
       if (event.target === $("settings-modal")) closeSettings();
     });
+    $("about-open")?.addEventListener("click", openAbout);
+    $("about-close")?.addEventListener("click", closeAbout);
+    $("about-modal")?.addEventListener("click", (event) => {
+      if (event.target === $("about-modal")) closeAbout();
+    });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeSettings();
+      if (event.key === "Escape") {
+        closeSettings();
+        closeAbout();
+      }
     });
     $("settings-form")?.addEventListener("submit", saveSettings);
     $("activity-clear")?.addEventListener("click", clearLogView);
@@ -1013,12 +1144,19 @@ const HeurivaSession = (() => {
 """
 
 
+_GEAR_SVG = """<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.34.68.24l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.26.42.5.42h3.8c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.25.1.54 0 .68-.24l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>"""
+
+_INFO_SVG = """<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="8" r="1.25" fill="currentColor"/><path fill="currentColor" d="M11 11h2v6h-2z"/></svg>"""
+
+_CLOSE_SVG = """<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.59 7.1 5.7A1 1 0 0 0 5.7 7.1L10.59 12 5.7 16.9a1 1 0 1 0 1.4 1.4L12 13.41l4.9 4.89a1 1 0 0 0 1.4-1.4L13.41 12l4.89-4.9a1 1 0 0 0 0-1.4z"/></svg>"""
+
+
 def _topbar(*, session_enabled: bool) -> str:
     settings_btn = ""
     if session_enabled:
-        settings_btn = """
+        settings_btn = f"""
       <button type="button" class="icon-btn" id="settings-open"
-        data-i18n-aria="settings_open" aria-label="Open settings" title="Settings">⚙</button>
+        data-i18n-aria="settings_open" aria-label="Open settings" title="Settings">{_GEAR_SVG}</button>
         """
     return f"""
   <header class="topbar">
@@ -1032,9 +1170,44 @@ def _topbar(*, session_enabled: bool) -> str:
         <button type="button" data-lang="en">EN</button>
         <button type="button" data-lang="zh">中文</button>
       </div>
+      <button type="button" class="icon-btn" id="about-open"
+        data-i18n-aria="about_open" aria-label="About" title="About">{_INFO_SVG}</button>
       {settings_btn}
     </div>
   </header>
+    """
+
+
+def _about_modal(*, version: str) -> str:
+    return f"""
+    <div id="about-modal" class="about-modal" aria-hidden="true" role="presentation">
+      <div class="about-dialog" role="dialog" aria-modal="true" aria-labelledby="about-title">
+        <div class="about-dialog-head">
+          <h2 id="about-title" data-i18n="about_title">About Heuriva</h2>
+          <button type="button" class="icon-btn" id="about-close"
+            data-i18n-aria="about_close" aria-label="Close about">{_CLOSE_SVG}</button>
+        </div>
+        <div class="about-body">
+          <p data-i18n="about_blurb">A local-first workspace for language-model tasks.</p>
+          <div class="about-meta">
+            <div><span class="label" data-i18n="about_github">GitHub</span>
+              <a href="https://github.com/ingeniousfrog/Heuriva" target="_blank" rel="noopener noreferrer">ingeniousfrog/Heuriva</a></div>
+            <div><span class="label" data-i18n="about_license">License</span>
+              <a href="https://github.com/ingeniousfrog/Heuriva/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT</a></div>
+            <div><span class="label" data-i18n="about_version">Version</span> <code>{_esc(version)}</code></div>
+            <div><span class="label" data-i18n="about_port">Session port</span> <code id="about-port-value">8766</code></div>
+          </div>
+          <p data-i18n="about_port_hint">Default 8766. Override with heuriva serve --port.</p>
+          <p><strong data-i18n="about_guidelines_title">Guidelines</strong></p>
+          <ul>
+            <li data-i18n="about_g1">Localhost-only Session UI.</li>
+            <li data-i18n="about_g2">Each step picks one operator: ANALYZE, SEARCH, or ANSWER.</li>
+            <li data-i18n="about_g3">Trajectory history is append-only.</li>
+            <li data-i18n="about_g4">No default VERIFY / semantic enforce.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
     """
 
 
@@ -1047,7 +1220,7 @@ def _settings_modal(*, base_url: str, model: str, session_enabled: bool) -> str:
         <div class="settings-dialog-head">
           <h2 id="settings-title" data-i18n="settings_title">Settings</h2>
           <button type="button" class="icon-btn" id="settings-close"
-            data-i18n-aria="settings_close" aria-label="Close settings">×</button>
+            data-i18n-aria="settings_close" aria-label="Close settings">{_CLOSE_SVG}</button>
         </div>
         <form id="settings-form" class="settings-form">
           <div class="field">
@@ -1145,9 +1318,10 @@ def render_session_home(
     {_topbar(session_enabled=session_enabled)}
     <section class="hero">
       <h1>Heuriva</h1>
-      <p data-i18n="tagline">Local cognitive runtime — ask, inspect, resume safely.</p>
+      <p data-i18n="tagline">Local cognitive workspace — ask, inspect trajectories, resume safely.</p>
       <p class="chip" data-i18n="local_chip">localhost session</p>
     </section>
+    {_about_modal(version=__version__)}
     {_settings_modal(base_url=base_url, model=model, session_enabled=session_enabled)}
     <div class="layout-split">
       <div>{composer}</div>
@@ -1231,6 +1405,7 @@ def render_task_detail(
     body = f"""
   <div class="page" data-session-enabled="{1 if session_enabled else 0}" data-page="detail">
     {_topbar(session_enabled=session_enabled)}
+    {_about_modal(version=__version__)}
     {_settings_modal(base_url=base_url, model=model, session_enabled=session_enabled)}
     <nav class="crumbs"><a href="/" data-i18n="back">← Session</a></nav>
     <header class="detail-hero">
@@ -1266,6 +1441,7 @@ def render_not_found(message: str) -> str:
     body = f"""
   <div class="page">
     {_topbar(session_enabled=False)}
+    {_about_modal(version=__version__)}
     <section class="hero"><h1>404</h1><p>{_esc(message)}</p></section>
   </div>
     """
@@ -1276,6 +1452,7 @@ def render_error(message: str) -> str:
     body = f"""
   <div class="page">
     {_topbar(session_enabled=False)}
+    {_about_modal(version=__version__)}
     <section class="hero"><h1>Error</h1><p>{_esc(message)}</p></section>
   </div>
     """

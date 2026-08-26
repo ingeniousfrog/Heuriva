@@ -329,6 +329,10 @@ def test_session_html_has_brand_and_composer(tmp_path: Path) -> None:
     assert "settings-base-url" in home
     assert "settings-modal" in home
     assert "settings-open" in home
+    assert "about-open" in home
+    assert "about-modal" in home
+    assert "ingeniousfrog/Heuriva" in home
+    assert "本机认知工作台" in home
     assert "session-form" in home
     assert "is-running" in home or "composer-card" in home
     assert task_id[:8] in home

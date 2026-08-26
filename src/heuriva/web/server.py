@@ -35,10 +35,15 @@ class _ServerState:
         browser: TrajectoryBrowser,
         db_path: Path,
         session: SessionService | None = None,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8766,
     ) -> None:
         self.browser = browser
         self.db_path = db_path
         self.session = session
+        self.host = host
+        self.port = port
 
 
 def create_handler(state: _ServerState) -> type[BaseHTTPRequestHandler]:
@@ -243,10 +248,19 @@ def create_handler(state: _ServerState) -> type[BaseHTTPRequestHandler]:
             self._respond(200, body, content_type="text/html; charset=utf-8")
 
         def _handle_api_status(self) -> None:
+            from heuriva import __version__
+
+            base = {
+                "session_enabled": state.session is not None,
+                "version": __version__,
+                "host": state.host,
+                "port": state.port,
+            }
             if state.session is None:
-                self._respond_json(200, {"session_enabled": False, "busy": False})
+                self._respond_json(200, {**base, "busy": False})
                 return
             snap = state.session.snapshot().to_dict()
+            snap.update(base)
             snap["session_enabled"] = True
             self._respond_json(200, snap)
 
@@ -406,6 +420,8 @@ def serve_browser(
         browser=browser,
         db_path=Path(db_path).expanduser(),
         session=session,
+        host=host,
+        port=port,
     )
     handler = create_handler(state)
     return ThreadingHTTPServer((host, port), handler)

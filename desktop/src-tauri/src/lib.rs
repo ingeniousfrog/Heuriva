@@ -45,6 +45,13 @@ fn wait_for_session(timeout: Duration) -> bool {
 }
 
 fn spawn_sidecar(app: &AppHandle) -> Result<(), String> {
+    if session_ready() {
+        eprintln!(
+            "reusing existing Heuriva Session on {SESSION_HOST}:{SESSION_PORT}"
+        );
+        return Ok(());
+    }
+
     let sidecar = app
         .shell()
         .sidecar("heuriva-sidecar")

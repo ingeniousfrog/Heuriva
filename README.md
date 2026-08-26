@@ -13,7 +13,7 @@ Explicit state · dynamic operators · inspectable SQLite trajectories · safe r
 [![CI](https://github.com/ingeniousfrog/Heuriva/actions/workflows/ci.yml/badge.svg)](https://github.com/ingeniousfrog/Heuriva/actions/workflows/ci.yml)
 [![Desktop release](https://img.shields.io/github/v/release/ingeniousfrog/Heuriva?label=desktop&color=007ec6)](https://github.com/ingeniousfrog/Heuriva/releases)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
-![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <br/>
 
@@ -109,12 +109,14 @@ heuriva run --criterion 'must_include:tradeoffs' --search-policy forbidden \
 ## Session UI
 
 ```bash
-heuriva serve   # http://127.0.0.1:8766/
+heuriva serve                 # http://127.0.0.1:8766/
+heuriva serve --port 8877     # pick another port if 8766 is taken
 ```
 
 - Ask a goal, watch live Activity progress, interrupt like Ctrl+C, resume on the home screen
 - Browse recent tasks and open full trajectory + final answer
 - Settings (LLM base URL / model) save to `~/.heuriva/config.yaml` and apply on the next run
+- **Port:** Session UI defaults to **8766** (desktop app uses the same). This is separate from the LLM OpenAI-compatible endpoint (often `:8765`). If you already run `heuriva serve`, the desktop app reuses that process instead of fighting for the port.
 
 Desktop apps spawn the same `heuriva serve` sidecar and open a WebView — no remote multi-tenant surface.
 
@@ -221,4 +223,4 @@ git push origin v1.0.1
 
 ## License
 
-MIT.
+[MIT](LICENSE).

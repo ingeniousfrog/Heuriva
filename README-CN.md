@@ -13,7 +13,7 @@
 [![CI](https://github.com/ingeniousfrog/Heuriva/actions/workflows/ci.yml/badge.svg)](https://github.com/ingeniousfrog/Heuriva/actions/workflows/ci.yml)
 [![Desktop release](https://img.shields.io/github/v/release/ingeniousfrog/Heuriva?label=desktop&color=007ec6)](https://github.com/ingeniousfrog/Heuriva/releases)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
-![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <br/>
 
@@ -110,12 +110,14 @@ heuriva run --criterion 'must_include:取舍' --search-policy forbidden \
 ## Session UI
 
 ```bash
-heuriva serve   # http://127.0.0.1:8766/
+heuriva serve                 # http://127.0.0.1:8766/
+heuriva serve --port 8877     # 8766 被占用时换端口
 ```
 
 - 提问、看实时 Activity、Interrupt（等同 Ctrl+C）、首页 Resume
 - 浏览最近任务，打开完整轨迹与最终答案
 - 设置（LLM Base URL / Model）写入 `~/.heuriva/config.yaml`，下一次运行生效
+- **端口：** Session UI 默认 **8766**（桌面端相同），与 LLM OpenAI-compatible 端点（常见 `:8765`）分开。若本机已在跑 `heuriva serve`，桌面端会复用该进程，而不是再抢端口。
 
 桌面端启动同一 `heuriva serve` sidecar 并用 WebView 打开——没有远程多租户面。
 
@@ -222,4 +224,4 @@ git push origin v1.0.1
 
 ## 许可证
 
-MIT。
+[MIT](LICENSE)。
