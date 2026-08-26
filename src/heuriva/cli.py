@@ -11,10 +11,7 @@ import typer
 
 from heuriva import __version__
 from heuriva.clients.model import ModelClient
-from heuriva.clients.search import SearchClient
 from heuriva.config import api_key_for, load_config, setup_config
-from heuriva.controller.llm_controller import LLMController
-from heuriva.core.operator import Operator
 from heuriva.core.task_contract import CriterionInput, SearchPolicy, parse_criteria
 from heuriva.diagnostics import collect_diagnostics
 from heuriva.eval_judge import FreshJudge
@@ -25,19 +22,18 @@ from heuriva.evaluation import (
     render_suite_report,
     run_eval_suite,
 )
-from heuriva.executors.llm import LLMExecutor
-from heuriva.executors.search import SearchExecutor
 from heuriva.runtime.engine import (
-    Executor,
     ResumeRejected,
     RuntimeEngine,
     RuntimeInterrupted,
     RuntimeProgress,
 )
+from heuriva.runtime.factory import build_engine
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_saved_trajectory
 from heuriva.web.queries import TrajectoryBrowser
 from heuriva.web.server import is_loopback_host, serve_browser
+from heuriva.web.session import SessionService
 
 app = typer.Typer(add_completion=False, invoke_without_command=True)
 DOCTOR_CONNECT_TIMEOUT_SECONDS = 1.0
@@ -555,24 +551,37 @@ def serve(
             "--port",
             min=1,
             max=65535,
-            help="HTTP port for the local trajectory browser.",
+            help="HTTP port for the local Session UI.",
         ),
     ] = DEFAULT_SERVE_PORT,
     db_path: Annotated[
         str | None,
         typer.Option(
             "--db",
-            help="SQLite path to inspect. Defaults to configured storage.",
+            help="SQLite path for Session UI / inspector. Defaults to configured storage.",
         ),
     ] = None,
+    read_only: Annotated[
+        bool,
+        typer.Option(
+            "--read-only",
+            help="Disable run/resume writes; keep the v0.8-style inspector only.",
+        ),
+    ] = False,
 ) -> None:
-    """Start a localhost read-only trajectory browser (no model calls, no writes)."""
+    """Start the localhost Session UI (run / list / detail / resume)."""
     try:
-        sqlite_path = db_path
-        if sqlite_path is None:
-            sqlite_path = str(load_config().storage.sqlite_path)
+        config = load_config()
+        sqlite_path = db_path if db_path is not None else str(config.storage.sqlite_path)
         store = SQLiteStore(sqlite_path)
         browser = TrajectoryBrowser(store)
+        session: SessionService | None = None
+        if not read_only:
+
+            def _engine() -> RuntimeEngine:
+                return build_engine(store=store)
+
+            session = SessionService(store=store, engine_factory=_engine, browser=browser)
     except Exception as exc:
         typer.echo(f"Could not open trajectory store: {exc}", err=True)
         raise typer.Exit(3) from exc
@@ -580,7 +589,7 @@ def serve(
     if not is_loopback_host(host):
         typer.echo(
             "WARNING: binding away from localhost exposes your local task database. "
-            "This inspector has no auth and is intended for 127.0.0.1 only.",
+            "Session UI has no auth and is intended for 127.0.0.1 only.",
             err=True,
         )
 
@@ -590,18 +599,25 @@ def serve(
             host=host,
             port=port,
             db_path=sqlite_path,
+            session=session,
         )
     except OSError as exc:
         typer.echo(f"Could not bind {host}:{port}: {exc}", err=True)
         raise typer.Exit(3) from exc
 
     display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
-    typer.echo(
-        f"Heuriva trajectory browser (read-only) at http://{display_host}:{port}/",
-        err=True,
-    )
+    mode = "Session UI" if session is not None else "trajectory inspector (read-only)"
+    typer.echo(f"Heuriva {mode} at http://{display_host}:{port}/", err=True)
     typer.echo(f"SQLite: {Path(sqlite_path).expanduser()}", err=True)
-    typer.echo("Press Ctrl+C to stop. UI does not call the model or rewrite steps.", err=True)
+    if session is not None:
+        typer.echo(
+            "Local session: send tasks, browse recent, resume. "
+            "Single-flight execution; not a remote dashboard.",
+            err=True,
+        )
+    else:
+        typer.echo("Read-only mode: no model calls, no writes.", err=True)
+    typer.echo("Press Ctrl+C to stop.", err=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -628,33 +644,7 @@ def _cli_criteria(
 
 
 def _build_engine() -> RuntimeEngine:
-    config = load_config()
-    store = SQLiteStore(config.storage.sqlite_path)
-    model_client = ModelClient(
-        base_url=config.llm.base_url,
-        model=config.llm.model,
-        api_key=api_key_for(config),
-        connect_timeout_seconds=config.llm.connect_timeout_seconds,
-        read_timeout_seconds=config.llm.read_timeout_seconds,
-        max_retries=config.llm.max_retries,
-    )
-    controller = LLMController(
-        model_client=model_client,
-        repair_attempts=config.runtime.controller_repair_attempts,
-    )
-    executors: dict[Operator, Executor] = {
-        Operator.ANALYZE: LLMExecutor(model_client=model_client),
-        Operator.ANSWER: LLMExecutor(model_client=model_client),
-    }
-    if config.tools.search.enabled:
-        executors[Operator.SEARCH] = SearchExecutor(
-            search_client=SearchClient(
-                max_results=config.tools.search.max_results,
-                timeout_seconds=config.tools.search.timeout_seconds,
-            ),
-            quality_config=config.quality,
-        )
-    return RuntimeEngine(config=config, store=store, controller=controller, executors=executors)
+    return build_engine()
 
 
 def _repl(*, trace: bool) -> None:

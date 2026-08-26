@@ -234,6 +234,41 @@ def api_key_for(config: AppConfig) -> str | None:
     return value or None
 
 
+def llm_settings_public(*, home: Path | None = None) -> dict[str, str]:
+    config = load_config(home=home)
+    return {"base_url": config.llm.base_url, "model": config.llm.model}
+
+
+def update_llm_settings(
+    *,
+    base_url: str | None = None,
+    model: str | None = None,
+    home: Path | None = None,
+) -> AppConfig:
+    """Update ~/.heuriva/config.yaml llm section (Session UI settings)."""
+    root_home = home or Path.home()
+    config_path = config_dir(root_home) / "config.yaml"
+    if not config_path.exists():
+        setup_config(home=root_home)
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"config file must contain a mapping: {config_path}")
+    llm = dict(loaded.get("llm") or {})
+    if base_url is not None:
+        llm["base_url"] = base_url.strip().rstrip("/")
+    if model is not None:
+        llm["model"] = model.strip()
+    loaded["llm"] = llm
+    expanded = _expand_storage_path(loaded, root_home)
+    config = AppConfig.model_validate(expanded)
+    config_path.write_text(
+        yaml.safe_dump(loaded, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    config_path.chmod(0o600)
+    return config
+
+
 def _write_if_missing(path: Path, content: str, *, force: bool, mode: int) -> bool:
     if path.exists() and not force:
         return False

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from heuriva.clients.model import ModelClientError
 from heuriva.config import AppConfig
@@ -86,6 +86,7 @@ class RuntimeInterrupted(KeyboardInterrupt):
 
 
 ProgressCallback = Callable[[RuntimeProgress], None]
+InterruptCheck = Callable[[], bool]
 
 
 class RuntimeEngine:
@@ -105,12 +106,38 @@ class RuntimeEngine:
         self.updater = StateUpdater()
         self.completion_validator = CompletionValidator(config.quality)
 
+    def cancel_io(self) -> None:
+        """Best-effort abort of in-flight model HTTP (Session Interrupt)."""
+        for client in self._iter_model_clients():
+            abort = getattr(client, "abort", None)
+            if callable(abort):
+                abort()
+            else:
+                close = getattr(client, "close", None)
+                if callable(close):
+                    close()
+
+    def _iter_model_clients(self) -> list[Any]:
+        clients: list[Any] = []
+        seen: set[int] = set()
+        for owner in (self.controller, *self.executors.values()):
+            client = getattr(owner, "model_client", None)
+            if client is None:
+                continue
+            marker = id(client)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            clients.append(client)
+        return clients
+
     def run(
         self,
         task: str,
         *,
         trace: bool = False,
         progress: ProgressCallback | None = None,
+        interrupt_check: InterruptCheck | None = None,
         criteria: tuple[CriterionInput, ...] = (),
         search_policy: SearchPolicy | str = SearchPolicy.AUTO,
         evidence_requirement: EvidenceRequirement | str = EvidenceRequirement.OPTIONAL,
@@ -134,6 +161,7 @@ class RuntimeEngine:
             prior_steps=(),
             trace=trace,
             progress=progress,
+            interrupt_check=interrupt_check,
             resumed=False,
             start_message="started task",
         )
@@ -145,6 +173,7 @@ class RuntimeEngine:
         force: bool = False,
         trace: bool = False,
         progress: ProgressCallback | None = None,
+        interrupt_check: InterruptCheck | None = None,
     ) -> RuntimeResult:
         cleaned = task_id.strip()
         if not cleaned:
@@ -204,6 +233,7 @@ class RuntimeEngine:
             prior_steps=prior_steps,
             trace=trace,
             progress=progress,
+            interrupt_check=interrupt_check,
             resumed=True,
             start_message=(
                 f"resumed task from status={eligibility.task_status} "
@@ -219,6 +249,7 @@ class RuntimeEngine:
         prior_steps: tuple[RuntimeStep, ...],
         trace: bool,
         progress: ProgressCallback | None,
+        interrupt_check: InterruptCheck | None,
         resumed: bool,
         start_message: str,
     ) -> RuntimeResult:
@@ -241,6 +272,7 @@ class RuntimeEngine:
         )
         try:
             for _ in range(remaining_budget):
+                self._raise_if_interrupted(interrupt_check)
                 if time.monotonic() - started > self.config.runtime.max_task_seconds:
                     status = StateStatus.FAILED
                     termination_reason = "max_task_seconds"
@@ -357,7 +389,9 @@ class RuntimeEngine:
                             operator=decision.operator.value,
                             started=started,
                         )
+                        self._raise_if_interrupted(interrupt_check)
                         result = executor.execute(decision, state)
+                        self._raise_if_interrupted(interrupt_check)
                 except Exception as exc:
                     event = RuntimeEvent(
                         task_id=state.task_id,
@@ -622,6 +656,11 @@ class RuntimeEngine:
             }:
                 count += 1
         return count
+
+    @staticmethod
+    def _raise_if_interrupted(interrupt_check: InterruptCheck | None) -> None:
+        if interrupt_check is not None and interrupt_check():
+            raise KeyboardInterrupt
 
     @staticmethod
     def _notify_progress(

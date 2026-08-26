@@ -1,0 +1,2 @@
+# Built sidecar binaries are produced by scripts/build-sidecar.sh
+# and named heuriva-sidecar-<rust-target-triple>[.exe].

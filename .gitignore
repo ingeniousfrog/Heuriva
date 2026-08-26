@@ -10,5 +10,13 @@ plan.md
 .coverage
 __pycache__/
 build/
-dist/
+/dist/
 *.egg-info/
+
+# Desktop / Tauri
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/release/
+desktop/dist/
+desktop/src-tauri/binaries/heuriva-sidecar-*
+!desktop/src-tauri/binaries/.gitkeep

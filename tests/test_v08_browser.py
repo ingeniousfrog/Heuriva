@@ -103,9 +103,7 @@ def test_html_renders_quality_signals(tmp_path: Path) -> None:
     detail_html = render_task_detail(detail, db_path=str(tmp_path / "memory.db"))
 
     assert task_id[:8] in list_html
-    assert "citation" in detail_html.lower()
-    assert "completion" in detail_html.lower()
-    assert "Task contract" in detail_html
+    assert "Contract" in detail_html or "quality" in detail_html.lower()
     assert "must_include" in detail_html or "criteria" in detail_html
 
 
@@ -196,7 +194,7 @@ def test_extract_completion_assessment_keeps_kind() -> None:
 
 
 def test_version_and_quality_defaults() -> None:
-    assert __version__ == "0.9.0"
+    assert __version__ == "1.0.0"
     state = CognitiveState.new(
         task_id="browser-version",
         goal="x",

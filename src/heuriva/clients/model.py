@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -60,6 +61,9 @@ class ModelClient:
         self.retry_backoff_seconds = max(0.0, retry_backoff_seconds)
         self._sleep = sleep
         self._own_client = http_client is None
+        self._aborted = False
+        self._connect_timeout_seconds = connect_timeout_seconds
+        self._read_timeout_seconds = read_timeout_seconds
         timeout = httpx.Timeout(
             timeout=read_timeout_seconds,
             connect=connect_timeout_seconds,
@@ -67,13 +71,23 @@ class ModelClient:
         )
         self.http_client = http_client or httpx.Client(timeout=timeout)
 
+    def abort(self) -> None:
+        """Abort in-flight HTTP (Session Interrupt). Subsequent chat raises KeyboardInterrupt."""
+        self._aborted = True
+        try:
+            self.http_client.close()
+        except Exception:
+            return
+
     def chat(
         self,
         messages: list[dict[str, str]],
         *,
         deadline_monotonic: float | None = None,
     ) -> ModelChatResult:
+        self._raise_if_aborted()
         for attempt in range(1, self.max_retries + 2):
+            self._raise_if_aborted()
             if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
                 raise ModelClientError(
                     "timeout",
@@ -83,7 +97,10 @@ class ModelClient:
                 )
             try:
                 result = self._chat_once(messages)
+            except KeyboardInterrupt:
+                raise
             except ModelClientError as exc:
+                self._raise_if_aborted()
                 error = exc.with_attempt_count(attempt)
                 if not error.retryable or attempt > self.max_retries:
                     raise error from exc
@@ -100,25 +117,60 @@ class ModelClient:
             attempt_count=self.max_retries + 1,
         )
 
+    def _raise_if_aborted(self) -> None:
+        if self._aborted:
+            raise KeyboardInterrupt
+
     def _chat_once(self, messages: list[dict[str, str]]) -> ModelChatResult:
+        """POST chat/completions; poll abort so Interrupt is not stuck on long reads."""
+        self._raise_if_aborted()
         url = f"{self.base_url}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        try:
-            response = self.http_client.post(
-                url,
-                headers=headers,
-                json={"model": self.model, "messages": messages},
-            )
-        except httpx.TimeoutException as exc:
-            raise ModelClientError("timeout", "model request timed out", retryable=True) from exc
-        except httpx.ConnectError as exc:
-            raise ModelClientError(
-                "connection_error", "could not connect to model endpoint"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise ModelClientError("request_error", str(exc), retryable=True) from exc
+        box: dict[str, Any] = {}
+
+        def worker() -> None:
+            try:
+                box["response"] = self.http_client.post(
+                    url,
+                    headers=headers,
+                    json={"model": self.model, "messages": messages},
+                )
+            except BaseException as exc:  # noqa: BLE001 - ferry to caller thread
+                box["error"] = exc
+
+        thread = threading.Thread(target=worker, name="heuriva-model-chat", daemon=True)
+        thread.start()
+        while thread.is_alive():
+            if self._aborted:
+                try:
+                    self.http_client.close()
+                except Exception:
+                    pass
+                thread.join(timeout=0.5)
+                raise KeyboardInterrupt
+            thread.join(timeout=0.05)
+
+        if "error" in box:
+            exc = box["error"]
+            if isinstance(exc, KeyboardInterrupt):
+                raise KeyboardInterrupt
+            self._raise_if_aborted()
+            if isinstance(exc, httpx.TimeoutException):
+                raise ModelClientError(
+                    "timeout", "model request timed out", retryable=True
+                ) from exc
+            if isinstance(exc, httpx.ConnectError):
+                raise ModelClientError(
+                    "connection_error", "could not connect to model endpoint"
+                ) from exc
+            if isinstance(exc, httpx.RequestError):
+                raise ModelClientError("request_error", str(exc), retryable=True) from exc
+            raise exc
+
+        response = box["response"]
+        self._raise_if_aborted()
         if response.status_code >= 400:
             raise self._status_error(response)
         try:
@@ -157,7 +209,10 @@ class ModelClient:
 
     def close(self) -> None:
         if self._own_client:
-            self.http_client.close()
+            try:
+                self.http_client.close()
+            except Exception:
+                return
 
     @staticmethod
     def _status_error(response: httpx.Response) -> ModelClientError:

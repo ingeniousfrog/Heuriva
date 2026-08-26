@@ -1,4 +1,4 @@
-"""Minimal HTML rendering for the local trajectory browser."""
+"""Session UI HTML — Perplexity-inspired layout with i18n and activity feed."""
 
 from __future__ import annotations
 
@@ -13,273 +13,1273 @@ def _esc(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
-def _page(title: str, body: str) -> str:
+def _shell(title: str, body: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="icon" href="/static/favicon.png" type="image/png"/>
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png"/>
   <title>{_esc(title)}</title>
   <style>
-    :root {{
-      --bg: #f4f6f8;
-      --fg: #1b1f24;
-      --muted: #59636e;
-      --line: #d0d7de;
-      --card: #ffffff;
-      --accent: #0550ae;
-      --warn: #9a6700;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
-      color: var(--fg);
-      background: var(--bg);
-    }}
-    header {{
-      padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--line);
-      background: var(--card);
-    }}
-    header h1 {{
-      margin: 0;
-      font-size: 1.15rem;
-      font-weight: 650;
-    }}
-    header p {{
-      margin: 0.35rem 0 0;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }}
-    main {{
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 1.25rem;
-    }}
-    a {{ color: var(--accent); text-decoration: none; }}
-    a:hover {{ text-decoration: underline; }}
-    .banner {{
-      margin: 0 0 1rem;
-      padding: 0.75rem 0.9rem;
-      border: 1px solid #ffe8a3;
-      background: #fff8c5;
-      color: var(--warn);
-      font-size: 0.9rem;
-    }}
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      background: var(--card);
-      border: 1px solid var(--line);
-    }}
-    th, td {{
-      padding: 0.55rem 0.7rem;
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-    }}
-    th {{
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      color: var(--muted);
-      background: #fafbfc;
-    }}
-    .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }}
-    .muted {{ color: var(--muted); }}
-    .section {{
-      margin: 1.25rem 0;
-      padding: 1rem;
-      background: var(--card);
-      border: 1px solid var(--line);
-    }}
-    .section h2 {{
-      margin: 0 0 0.75rem;
-      font-size: 1rem;
-    }}
-    .kv {{
-      display: grid;
-      grid-template-columns: 11rem 1fr;
-      gap: 0.35rem 0.75rem;
-      margin: 0;
-    }}
-    .kv dt {{ color: var(--muted); }}
-    .kv dd {{ margin: 0; word-break: break-word; }}
-    pre {{
-      margin: 0;
-      padding: 0.75rem;
-      overflow: auto;
-      background: #f6f8fa;
-      border: 1px solid var(--line);
-      font-size: 0.85rem;
-      white-space: pre-wrap;
-    }}
-    .empty {{ color: var(--muted); font-style: italic; }}
-    nav.crumbs {{ margin-bottom: 1rem; font-size: 0.9rem; }}
+{_CSS}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Heuriva Trajectory Browser</h1>
-    <p>Local read-only inspector — not a remote dashboard. No model calls from this UI.</p>
-  </header>
-  <main>
-    {body}
-  </main>
+  {body}
+  <div id="session-toast" class="toast" aria-live="polite"></div>
+  <script>
+{_JS}
+  </script>
 </body>
 </html>
 """
 
 
-def render_task_list(tasks: tuple[TaskListItem, ...], *, db_path: str) -> str:
-    rows = []
-    for task in tasks:
-        rows.append(
-            "<tr>"
-            f'<td class="mono"><a href="/tasks/{_esc(task.task_id)}">'
-            f"{_esc(task.task_id[:8])}…</a></td>"
-            f"<td>{_esc(task.status)}</td>"
-            f"<td>{task.step_count}</td>"
-            f"<td>{_esc(task.goal_summary)}</td>"
-            f'<td class="muted mono">{_esc(task.updated_at)}</td>'
-            "</tr>"
-        )
-    body_rows = (
-        "".join(rows)
-        if rows
-        else '<tr><td colspan="5" class="empty">No tasks in this database.</td></tr>'
-    )
-    body = f"""
-    <p class="banner">Read-only view of <span class="mono">{_esc(db_path)}</span>.
-    Opening pages does not rewrite trajectory steps or call the model.</p>
-    <div class="section">
-      <h2>Tasks</h2>
-      <table>
-        <thead>
-          <tr><th>Task</th><th>Status</th><th>Steps</th><th>Goal</th><th>Updated</th></tr>
-        </thead>
-        <tbody>{body_rows}</tbody>
-      </table>
+_CSS = """
+:root {
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --ink: #1b1b18;
+  --muted: #6b6b65;
+  --line: #e4e4de;
+  --accent: #127681;
+  --accent-hover: #0f636d;
+  --accent-soft: rgba(18, 118, 129, 0.1);
+  --danger: #b42318;
+  --ok: #067647;
+  --shadow: 0 8px 32px rgba(27, 27, 24, 0.06);
+  --radius: 16px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --mono: "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font: 15px/1.5 var(--font);
+  color: var(--ink);
+  background: radial-gradient(1200px 600px at 50% -20%, #eef6f6 0%, var(--bg) 55%);
+}
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 650;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  color: inherit;
+}
+.logo-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+}
+.topbar-spacer { flex: 1; }
+.topbar-actions { display: flex; align-items: center; gap: 0.35rem; }
+.lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.lang-toggle button {
+  border: 0;
+  background: transparent;
+  padding: 0.35rem 0.65rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lang-toggle button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.icon-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 10px;
+  width: 2.1rem;
+  height: 2.1rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.icon-btn:hover { border-color: #ccc; color: var(--ink); }
+.hero { text-align: center; margin-bottom: 1.25rem; }
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+.hero p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.composer-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.85rem;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.composer-card textarea {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 5.5rem;
+  border: 0;
+  resize: vertical;
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.composer-card.is-running {
+  border-color: rgba(18, 118, 129, 0.35);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow);
+}
+.composer-card.is-running textarea {
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  resize: none;
+  cursor: default;
+}
+.composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: end;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.field { flex: 1 1 8rem; min-width: 0; }
+.field label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.field input, .field select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  background: var(--bg);
+}
+button, .btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font: 600 0.92rem/1 var(--font);
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+}
+button:hover { background: var(--accent-hover); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.secondary, .btn.secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+button.secondary:hover { background: var(--bg); }
+button.danger { background: var(--danger); }
+.layout-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: stretch;
+  height: 22rem;
+}
+.layout-split > * {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.layout-split > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.layout-split > div > .composer-card {
+  flex: 1;
+  min-height: 0;
+}
+@media (min-width: 900px) {
+  .page { max-width: 980px; }
+  .layout-split {
+    grid-template-columns: 1fr 1fr;
+    height: 24rem;
+  }
+}
+.activity-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.activity-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.activity-head span.sub { color: var(--muted); font-weight: 400; }
+.activity-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.activity-actions button {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+}
+.activity-feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.activity-line {
+  padding: 0.2rem 0;
+  color: var(--ink);
+  animation: fade-in 0.25s ease;
+}
+.activity-line .ts { color: var(--muted); margin-right: 0.45rem; }
+.activity-line .stage { color: var(--accent); margin-right: 0.35rem; }
+.activity-empty {
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 0.88rem;
+  padding: 1rem 0.25rem;
+}
+.recent-drawer {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.recent-drawer summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  font-weight: 600;
+  user-select: none;
+}
+.recent-drawer summary::-webkit-details-marker { display: none; }
+.recent-drawer summary::before {
+  content: "▸";
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.recent-drawer[open] summary::before { transform: rotate(90deg); }
+.recent-drawer .db { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); font-weight: 400; }
+.recent-drawer .count { color: var(--muted); font-weight: 500; }
+.recent-body { border-top: 1px solid var(--line); padding: 0.25rem 0; }
+.task-list { list-style: none; margin: 0; padding: 0; }
+.task-list li { border-bottom: 1px solid var(--line); }
+.task-list li:last-child { border-bottom: 0; }
+.task-list a {
+  display: grid;
+  grid-template-columns: 4.5rem 5.5rem 2.5rem 1fr;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.88rem;
+}
+.task-list a:hover { background: var(--bg); }
+.mono { font-family: var(--mono); font-size: 0.82rem; }
+.muted { color: var(--muted); }
+.status-pill { color: var(--accent); font-size: 0.8rem; }
+.goal-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { color: var(--muted); font-style: italic; padding: 0.75rem 0.9rem; }
+.banner {
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius);
+  background: #fff8e8;
+  color: #8a5a12;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+.settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4.5rem 1rem 1.5rem;
+  background: rgba(27, 27, 24, 0.28);
+}
+.settings-modal.open { display: flex; }
+.settings-dialog {
+  width: min(26rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.1rem 1.1rem;
+}
+.settings-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+.settings-dialog-head h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 650;
+}
+.settings-form .field { margin-bottom: 0.75rem; }
+.settings-form label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.settings-form input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  font-size: 0.9rem;
+  background: var(--bg);
+}
+.settings-form input:focus {
+  outline: none;
+  border-color: rgba(18, 118, 129, 0.45);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.settings-form .hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 10px;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 30;
+  font-size: 0.88rem;
+}
+.toast.visible { opacity: 1; transform: translateY(0); }
+.crumbs { margin-bottom: 1rem; font-size: 0.9rem; }
+.crumbs a { color: var(--accent); text-decoration: none; }
+.detail-hero h1 { margin: 0.35rem 0 0; font-size: 1.45rem; font-weight: 650; line-height: 1.25; }
+.meta-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.85rem; margin-top: 0.65rem; color: var(--muted); font-size: 0.88rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.panel, .answer-block {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.panel h2, .answer-block h2 { margin: 0 0 0.6rem; font-size: 1rem; }
+.answer-block .body { white-space: pre-wrap; word-break: break-word; }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { padding: 0.65rem 0; border-bottom: 1px solid var(--line); }
+.timeline li:last-child { border-bottom: 0; }
+.timeline .op { font-family: var(--mono); font-size: 0.78rem; color: var(--accent); }
+.timeline .obs { color: var(--muted); font-size: 0.88rem; margin-top: 0.25rem; }
+details.fold summary { cursor: pointer; color: var(--muted); font-size: 0.88rem; }
+pre {
+  margin: 0.5rem 0 0;
+  padding: 0.65rem;
+  background: var(--bg);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 640px) {
+  .task-list a {
+    grid-template-columns: 4rem 1fr;
+    grid-template-areas: "id status" "goal goal" "steps steps";
+  }
+  .task-list .col-id { grid-area: id; }
+  .task-list .col-status { grid-area: status; justify-self: end; }
+  .task-list .col-steps { grid-area: steps; }
+  .task-list .col-goal { grid-area: goal; white-space: normal; }
+}
+"""
+
+_JS = r"""
+const HeurivaSession = (() => {
+  const I18N = {
+    en: {
+      tagline: "Local cognitive runtime — ask, inspect, resume safely.",
+      local_chip: "localhost session",
+      new_task: "Ask Heuriva",
+      goal_ph: "What should Heuriva solve?",
+      criterion: "Criterion (optional)",
+      criterion_ph: "e.g. mention tradeoffs",
+      search: "Search",
+      run: "Run",
+      activity: "Activity",
+      activity_hint: "live progress",
+      activity_empty: "Progress lines appear here while a task runs.",
+      clear_log: "Clear",
+      interrupt: "Interrupt",
+      interrupting: "Interrupting…",
+      interrupt_sent: "Interrupt requested",
+      interrupt_idle: "Nothing is running.",
+      interrupted_ready: "Interrupted — edit or resume.",
+      recent: "Recent tasks",
+      no_tasks: "No tasks yet.",
+      settings_title: "Settings",
+      settings_base_url: "LLM base URL",
+      settings_base_url_hint: "OpenAI-compatible endpoint. Saved to ~/.heuriva/config.yaml for the next run.",
+      settings_model: "Model",
+      save: "Save",
+      saving: "Saving…",
+      cancel: "Cancel",
+      settings_saved: "Saved — applies to the next run.",
+      settings_open: "Open settings",
+      settings_close: "Close settings",
+      enter_goal: "Enter a goal first.",
+      force_confirm: "Force resume a done task? History is never rewritten.",
+      copy_ok: "Copied task id",
+      back: "← Session",
+      final_answer: "Final answer",
+      steps: "Steps",
+      copy_id: "Copy id",
+      resume: "Resume",
+      force_resume: "Force resume",
+      readonly: "Read-only inspector. Run heuriva serve for the interactive Session UI.",
+      opening_result: "Opening full trajectory…",
+    },
+    zh: {
+      tagline: "本机认知运行时 — 提问、检视轨迹、安全续跑。",
+      local_chip: "本机会话",
+      new_task: "向 Heuriva 提问",
+      goal_ph: "想让 Heuriva 解决什么问题？",
+      criterion: "完成条件（可选）",
+      criterion_ph: "例如：提到取舍",
+      search: "搜索",
+      run: "运行",
+      activity: "运行日志",
+      activity_hint: "实时进度",
+      activity_empty: "任务运行时会在这里逐条刷出进度。",
+      clear_log: "清空",
+      interrupt: "中断",
+      interrupting: "正在中断…",
+      interrupt_sent: "已请求中断",
+      interrupt_idle: "当前没有运行中的任务。",
+      interrupted_ready: "已中断 — 可改写提问或续跑。",
+      recent: "最近任务",
+      no_tasks: "还没有任务。",
+      settings_title: "设置",
+      settings_base_url: "LLM Base URL",
+      settings_base_url_hint: "OpenAI 兼容端点。保存到 ~/.heuriva/config.yaml，下一次运行生效。",
+      settings_model: "模型",
+      save: "保存",
+      saving: "保存中…",
+      cancel: "取消",
+      settings_saved: "已保存 — 下一次运行生效。",
+      settings_open: "打开设置",
+      settings_close: "关闭设置",
+      enter_goal: "请先输入任务目标。",
+      force_confirm: "强制续跑已完成任务？历史不会被改写，只会追加步骤。",
+      copy_ok: "已复制 task id",
+      back: "← 会话",
+      final_answer: "最终答案",
+      steps: "步骤",
+      copy_id: "复制 ID",
+      resume: "续跑",
+      force_resume: "强制续跑",
+      readonly: "只读检视模式。请用 heuriva serve 启动可交互 Session UI。",
+      opening_result: "正在打开完整轨迹…",
+    },
+  };
+
+  let lang = localStorage.getItem("heuriva_lang") || ((navigator.language || "").startsWith("zh") ? "zh" : "en");
+  let pollTimer = null;
+  let lastBusy = false;
+  let lastLogLen = 0;
+  let redirectScheduled = false;
+  let resumeTaskId = null;
+  let resumeBaselineGoal = "";
+  let interruptPending = false;
+
+  function $(id) { return document.getElementById(id); }
+
+  function pageName() {
+    const el = document.querySelector("[data-page]");
+    return el ? el.getAttribute("data-page") : "";
+  }
+
+  function currentGoal() {
+    const goalEl = $("session-goal");
+    return (goalEl && goalEl.value || "").trim();
+  }
+
+  function isResumeMode() {
+    return Boolean(resumeTaskId) && currentGoal() === resumeBaselineGoal;
+  }
+
+  function syncSendButton(busy) {
+    const send = $("session-send");
+    if (!send) return;
+    send.disabled = Boolean(busy);
+    if (busy) {
+      send.textContent = t("run");
+      return;
+    }
+    send.textContent = isResumeMode() ? t("resume") : t("run");
+  }
+
+  function enterResumeMode(taskId, goal) {
+    resumeTaskId = taskId || null;
+    resumeBaselineGoal = (goal || "").trim();
+    setComposerRunning(false);
+    syncSendButton(false);
+  }
+
+  function clearResumeMode() {
+    resumeTaskId = null;
+    resumeBaselineGoal = "";
+    syncSendButton(false);
+  }
+
+  function setComposerRunning(running) {
+    const form = $("session-form");
+    const goalEl = $("session-goal");
+    const criterion = $("session-criterion");
+    const search = $("session-search-policy");
+    if (form) form.classList.toggle("is-running", Boolean(running));
+    if (goalEl) goalEl.readOnly = Boolean(running);
+    if (criterion) criterion.disabled = Boolean(running);
+    if (search) search.disabled = Boolean(running);
+  }
+
+  function t(key) {
+    return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+  }
+
+  function applyI18n() {
+    document.documentElement.lang = lang === "zh" ? "zh-Hans" : "en";
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const key = el.getAttribute("data-i18n");
+      if (key) el.textContent = t(key);
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+      const key = el.getAttribute("data-i18n-placeholder");
+      if (key) el.placeholder = t(key);
+    });
+    document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+      const key = el.getAttribute("data-i18n-aria");
+      if (key) {
+        el.setAttribute("aria-label", t(key));
+        if (el.hasAttribute("title")) el.setAttribute("title", t(key));
+      }
+    });
+    document.querySelectorAll(".lang-toggle button").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.lang === lang);
+    });
+    syncSendButton(Boolean($("session-send") && $("session-send").disabled));
+  }
+
+  function setLang(next) {
+    lang = next;
+    localStorage.setItem("heuriva_lang", lang);
+    applyI18n();
+  }
+
+  function toast(message) {
+    const el = $("session-toast");
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add("visible");
+    setTimeout(() => el.classList.remove("visible"), 3200);
+  }
+
+  async function api(path, options) {
+    const res = await fetch(path, {
+      headers: { Accept: "application/json", ...(options && options.headers || {}) },
+      ...options,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error((data && (data.message || data.error)) || res.statusText);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function formatTs(ts) {
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function renderLog(log, force) {
+    const feed = $("activity-feed");
+    if (!feed) return;
+    if (!log || !log.length) {
+      if (force) {
+        feed.innerHTML = '<div class="activity-empty">' + t("activity_empty") + "</div>";
+        lastLogLen = 0;
+      }
+      return;
+    }
+    if (force || lastLogLen === 0) {
+      feed.innerHTML = "";
+      lastLogLen = 0;
+    }
+    for (let i = lastLogLen; i < log.length; i++) {
+      const line = log[i];
+      const el = document.createElement("div");
+      el.className = "activity-line";
+      const parts = [];
+      if (line.ts) parts.push('<span class="ts">' + formatTs(line.ts) + "</span>");
+      if (line.stage) parts.push('<span class="stage">' + line.stage + "</span>");
+      if (line.operator) parts.push("<span>" + line.operator + "</span>");
+      if (line.step_index != null) parts.push("<span>step " + line.step_index + "</span>");
+      parts.push("<span>" + (line.message || "") + "</span>");
+      el.innerHTML = parts.join(" ");
+      feed.appendChild(el);
+    }
+    lastLogLen = log.length;
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function clearLogView() {
+    lastLogLen = 0;
+    renderLog([], true);
+  }
+
+  async function pollOnce() {
+    const snap = await api("/api/status");
+    renderLog(snap.log || []);
+    const busy = Boolean(snap.busy);
+    setComposerRunning(busy);
+    syncSendButton(busy);
+    const interruptBtn = $("activity-interrupt");
+    if (interruptBtn) interruptBtn.disabled = !busy;
+    document.querySelectorAll("[data-resume-btn]").forEach((btn) => { btn.disabled = busy; });
+    if (lastBusy && !busy && !redirectScheduled) {
+      const interrupted =
+        interruptPending ||
+        snap.result_status === "interrupted" ||
+        snap.error_code === "interrupted" ||
+        snap.stage === "interrupted";
+      interruptPending = false;
+      if (interrupted && snap.task_id && pageName() === "home") {
+        enterResumeMode(snap.task_id, currentGoal());
+        toast(t("interrupted_ready"));
+      } else if (snap.task_id && pageName() === "home") {
+        redirectScheduled = true;
+        clearResumeMode();
+        if (snap.error) toast(snap.error);
+        else toast(t("opening_result"));
+        if (window.HeurivaSessionOnIdle) window.HeurivaSessionOnIdle(snap);
+        else {
+          setTimeout(() => {
+            window.location.href = "/tasks/" + encodeURIComponent(snap.task_id);
+          }, 700);
+        }
+      } else {
+        if (snap.error) toast(snap.error);
+        else if (snap.result_status) {
+          toast((snap.task_id || "").slice(0, 8) + "… → " + snap.result_status);
+        }
+        if (window.HeurivaSessionOnIdle && snap.task_id) {
+          window.HeurivaSessionOnIdle(snap);
+        } else if (pageName() === "detail" && snap.task_id) {
+          redirectScheduled = true;
+          setTimeout(() => { window.location.reload(); }, 700);
+        }
+      }
+    }
+    lastBusy = busy;
+    return snap;
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => { pollOnce().catch(() => {}); }, 800);
+    pollOnce().catch(() => {});
+  }
+
+  async function submitRun(event) {
+    event.preventDefault();
+    const goalEl = $("session-goal");
+    const goal = (goalEl && goalEl.value || "").trim();
+    if (!goal) { toast(t("enter_goal")); return; }
+    if (isResumeMode()) {
+      await submitResume(resumeTaskId, false);
+      return;
+    }
+    const criteria = [];
+    const criterion = ($("session-criterion") && $("session-criterion").value || "").trim();
+    if (criterion) criteria.push(criterion);
+    try {
+      clearLogView();
+      lastBusy = true;
+      redirectScheduled = false;
+      clearResumeMode();
+      interruptPending = false;
+      setComposerRunning(true);
+      syncSendButton(true);
+      await api("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal,
+          criteria,
+          search_policy: ($("session-search-policy") && $("session-search-policy").value) || "auto",
+        }),
+      });
+      startPolling();
+    } catch (err) {
+      toast(err.message || "Run failed");
+      setComposerRunning(false);
+      syncSendButton(false);
+    }
+  }
+
+  async function submitResume(taskId, force) {
+    try {
+      clearLogView();
+      lastBusy = true;
+      redirectScheduled = false;
+      setComposerRunning(true);
+      syncSendButton(true);
+      await api("/api/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: taskId, force: Boolean(force) }),
+      });
+      if (pageName() === "detail") {
+        const heading = document.querySelector(".detail-hero h1");
+        const goal = (heading && heading.textContent || "").trim();
+        try {
+          sessionStorage.setItem("heuriva_resume_goal", goal);
+          sessionStorage.setItem("heuriva_resume_task", taskId);
+        } catch (_) {}
+        window.location.href = "/";
+        return;
+      }
+      startPolling();
+    } catch (err) {
+      toast(err.message || "Resume failed");
+      setComposerRunning(false);
+      syncSendButton(false);
+    }
+  }
+
+  async function submitInterrupt() {
+    const btn = $("activity-interrupt");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = t("interrupting");
+    }
+    try {
+      await api("/api/interrupt", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      interruptPending = true;
+      toast(t("interrupt_sent"));
+      startPolling();
+    } catch (err) {
+      interruptPending = false;
+      toast(err.message || t("interrupt_idle"));
+    } finally {
+      if (btn) btn.textContent = t("interrupt");
+    }
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast(t("copy_ok")));
+      return;
+    }
+    toast(text);
+  }
+
+  async function saveSettings(event) {
+    event.preventDefault();
+    const baseEl = $("settings-base-url");
+    const modelEl = $("settings-model");
+    const saveBtn = $("settings-save");
+    const base_url = (baseEl && baseEl.value || "").trim();
+    const model = (modelEl && modelEl.value || "").trim();
+    if (!base_url) { toast(t("settings_base_url_required") || "Base URL required"); return; }
+    if (!model) { toast(t("settings_model_required") || "Model required"); return; }
+    const payload = { base_url, model };
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = t("saving");
+    }
+    try {
+      try {
+        await api("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } catch (err) {
+        if (err.status === 405 || err.status === 404) {
+          await api("/api/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        } else {
+          throw err;
+        }
+      }
+      toast(t("settings_saved"));
+      closeSettings();
+    } catch (err) {
+      toast(err.message || "Save failed");
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = t("save");
+      }
+    }
+  }
+
+  function openSettings() {
+    const modal = $("settings-modal");
+    if (!modal) return;
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+    $("settings-base-url")?.focus();
+  }
+
+  function closeSettings() {
+    const modal = $("settings-modal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  function restoreResumeFromDetail() {
+    if (pageName() !== "home") return;
+    let goal = "";
+    let taskId = "";
+    try {
+      goal = sessionStorage.getItem("heuriva_resume_goal") || "";
+      taskId = sessionStorage.getItem("heuriva_resume_task") || "";
+      sessionStorage.removeItem("heuriva_resume_goal");
+      sessionStorage.removeItem("heuriva_resume_task");
+    } catch (_) {}
+    if (goal && $("session-goal")) $("session-goal").value = goal;
+    if (taskId) {
+      resumeTaskId = taskId;
+      resumeBaselineGoal = goal;
+    }
+  }
+
+  function bind() {
+    applyI18n();
+    restoreResumeFromDetail();
+    document.querySelectorAll(".lang-toggle button").forEach((btn) => {
+      btn.addEventListener("click", () => setLang(btn.dataset.lang));
+    });
+    $("settings-open")?.addEventListener("click", openSettings);
+    $("settings-close")?.addEventListener("click", closeSettings);
+    $("settings-cancel")?.addEventListener("click", closeSettings);
+    $("settings-modal")?.addEventListener("click", (event) => {
+      if (event.target === $("settings-modal")) closeSettings();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeSettings();
+    });
+    $("settings-form")?.addEventListener("submit", saveSettings);
+    $("activity-clear")?.addEventListener("click", clearLogView);
+    $("activity-interrupt")?.addEventListener("click", submitInterrupt);
+    $("session-form")?.addEventListener("submit", submitRun);
+    $("session-goal")?.addEventListener("input", () => {
+      if (!($("session-send") && $("session-send").disabled)) syncSendButton(false);
+    });
+    document.querySelectorAll("[data-resume-btn]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const taskId = btn.getAttribute("data-task-id");
+        const force = btn.getAttribute("data-force") === "1";
+        if (force && !window.confirm(t("force_confirm"))) return;
+        submitResume(taskId, force);
+      });
+    });
+    document.querySelectorAll("[data-copy-id]").forEach((btn) => {
+      btn.addEventListener("click", () => copyText(btn.getAttribute("data-copy-id") || ""));
+    });
+    const page = document.querySelector("[data-page]");
+    if (page && page.dataset.sessionEnabled === "1") startPolling();
+  }
+
+  document.addEventListener("DOMContentLoaded", bind);
+  return { pollOnce, startPolling, submitResume, toast, setLang };
+})();
+"""
+
+
+def _topbar(*, session_enabled: bool) -> str:
+    settings_btn = ""
+    if session_enabled:
+        settings_btn = """
+      <button type="button" class="icon-btn" id="settings-open"
+        data-i18n-aria="settings_open" aria-label="Open settings" title="Settings">⚙</button>
+        """
+    return f"""
+  <header class="topbar">
+    <a class="logo" href="/">
+      <img class="logo-mark" src="/static/icon.png" alt="" width="28" height="28"/>
+      <span>Heuriva</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <div class="topbar-actions">
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="zh">中文</button>
+      </div>
+      {settings_btn}
+    </div>
+  </header>
+    """
+
+
+def _settings_modal(*, base_url: str, model: str, session_enabled: bool) -> str:
+    if not session_enabled:
+        return ""
+    return f"""
+    <div id="settings-modal" class="settings-modal" aria-hidden="true" role="presentation">
+      <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="settings-dialog-head">
+          <h2 id="settings-title" data-i18n="settings_title">Settings</h2>
+          <button type="button" class="icon-btn" id="settings-close"
+            data-i18n-aria="settings_close" aria-label="Close settings">×</button>
+        </div>
+        <form id="settings-form" class="settings-form">
+          <div class="field">
+            <label for="settings-base-url" data-i18n="settings_base_url">LLM base URL</label>
+            <input id="settings-base-url" name="base_url" type="text" autocomplete="off"
+              spellcheck="false" value="{_esc(base_url)}"/>
+            <p class="hint" data-i18n="settings_base_url_hint">OpenAI-compatible endpoint.</p>
+          </div>
+          <div class="field">
+            <label for="settings-model" data-i18n="settings_model">Model</label>
+            <input id="settings-model" name="model" type="text" autocomplete="off"
+              value="{_esc(model)}"/>
+          </div>
+          <div class="settings-actions">
+            <button type="button" class="secondary" id="settings-cancel" data-i18n="cancel">Cancel</button>
+            <button type="submit" id="settings-save" data-i18n="save">Save</button>
+          </div>
+        </form>
+      </div>
     </div>
     """
-    return _page("Heuriva tasks", body)
 
 
-def render_task_detail(detail: TaskDetail, *, db_path: str) -> str:
+def render_session_home(
+    tasks: tuple[TaskListItem, ...],
+    *,
+    db_path: str,
+    session_enabled: bool = True,
+    status: dict[str, Any] | None = None,
+    llm_settings: dict[str, str] | None = None,
+) -> str:
+    del status
+    base_url = (llm_settings or {}).get("base_url", "http://localhost:8765/v1")
+    model = (llm_settings or {}).get("model", "auto")
+    rows: list[str] = []
+    for task in tasks:
+        rows.append(
+            f'<li><a href="/tasks/{_esc(task.task_id)}">'
+            f'<span class="mono col-id">{_esc(task.task_id[:8])}…</span>'
+            f'<span class="status-pill col-status">{_esc(task.status)}</span>'
+            f'<span class="muted col-steps">{task.step_count}</span>'
+            f'<span class="goal-cell col-goal">{_esc(task.goal_summary)}</span>'
+            f"</a></li>"
+        )
+    list_html = (
+        f'<ul class="task-list">{"".join(rows)}</ul>'
+        if rows
+        else f'<p class="empty" data-i18n="no_tasks">{_esc("No tasks yet.")}</p>'
+    )
+
+    composer = ""
+    activity = ""
+    if session_enabled:
+        composer = """
+      <form class="composer-card" id="session-form">
+        <textarea id="session-goal" name="goal" data-i18n-placeholder="goal_ph"
+          placeholder="What should Heuriva solve?" required></textarea>
+        <div class="composer-toolbar">
+          <div class="field">
+            <label for="session-criterion" data-i18n="criterion">Criterion (optional)</label>
+            <input id="session-criterion" type="text" data-i18n-placeholder="criterion_ph"
+              placeholder="e.g. mention tradeoffs"/>
+          </div>
+          <div class="field" style="flex:0 1 7rem">
+            <label for="session-search-policy" data-i18n="search">Search</label>
+            <select id="session-search-policy">
+              <option value="auto" selected>auto</option>
+              <option value="required">required</option>
+              <option value="forbidden">forbidden</option>
+            </select>
+          </div>
+          <button type="submit" id="session-send" data-i18n="run">Run</button>
+        </div>
+      </form>
+        """
+        activity = """
+      <aside class="activity-panel">
+        <div class="activity-head">
+          <span><span data-i18n="activity">Activity</span> <span class="sub" data-i18n="activity_hint">live</span></span>
+          <div class="activity-actions">
+            <button type="button" class="danger" id="activity-interrupt" disabled data-i18n="interrupt">Interrupt</button>
+            <button type="button" class="secondary" id="activity-clear" data-i18n="clear_log">Clear</button>
+          </div>
+        </div>
+        <div class="activity-feed" id="activity-feed">
+          <div class="activity-empty" data-i18n="activity_empty">Progress lines appear here while a task runs.</div>
+        </div>
+      </aside>
+        """
+    else:
+        composer = '<p class="banner" data-i18n="readonly">Read-only inspector mode.</p>'
+
+    body = f"""
+  <div class="page" data-session-enabled="{1 if session_enabled else 0}" data-page="home">
+    {_topbar(session_enabled=session_enabled)}
+    <section class="hero">
+      <h1>Heuriva</h1>
+      <p data-i18n="tagline">Local cognitive runtime — ask, inspect, resume safely.</p>
+      <p class="chip" data-i18n="local_chip">localhost session</p>
+    </section>
+    {_settings_modal(base_url=base_url, model=model, session_enabled=session_enabled)}
+    <div class="layout-split">
+      <div>{composer}</div>
+      {activity}
+    </div>
+    <details class="recent-drawer" id="recent-drawer">
+      <summary>
+        <span data-i18n="recent">Recent tasks</span>
+        <span class="count">({len(tasks)})</span>
+        <span class="db">{_esc(db_path)}</span>
+      </summary>
+      <div class="recent-body">{list_html}</div>
+    </details>
+  </div>
+    """
+    return _shell("Heuriva", body)
+
+
+def render_task_list(tasks: tuple[TaskListItem, ...], *, db_path: str) -> str:
+    return render_session_home(tasks, db_path=db_path, session_enabled=False)
+
+
+def render_task_detail(
+    detail: TaskDetail,
+    *,
+    db_path: str,
+    session_enabled: bool = False,
+    resume_eligibility: dict[str, Any] | None = None,
+    status: dict[str, Any] | None = None,
+    llm_settings: dict[str, str] | None = None,
+) -> str:
+    del status
+    base_url = (llm_settings or {}).get("base_url", "http://localhost:8765/v1")
+    model = (llm_settings or {}).get("model", "auto")
+    eligibility = resume_eligibility or {}
+    can_resume = bool(eligibility.get("eligible"))
+    is_done = detail.status == "done"
+    actions: list[str] = [
+        f'<button type="button" class="secondary" data-copy-id="{_esc(detail.task_id)}" '
+        f'data-i18n="copy_id">Copy id</button>'
+    ]
+    if session_enabled and can_resume:
+        actions.append(
+            f'<button type="button" data-resume-btn data-task-id="{_esc(detail.task_id)}" '
+            f'data-force="0" data-i18n="resume">Resume</button>'
+        )
+    elif session_enabled and is_done:
+        actions.append(
+            f'<button type="button" class="danger" data-resume-btn '
+            f'data-task-id="{_esc(detail.task_id)}" data-force="1" data-i18n="force_resume">'
+            f"Force resume</button>"
+        )
+
+    steps_html: list[str] = []
+    for step in detail.steps:
+        steps_html.append(
+            "<li>"
+            f'<div class="op">{_esc(step.operator)} · step {step.step_index}</div>'
+            f"<div>{_esc(step.objective)}</div>"
+            f'<div class="obs">{_esc(step.observation_summary)}</div>'
+            "</li>"
+        )
+    timeline = (
+        f'<ol class="timeline">{"".join(steps_html)}</ol>'
+        if steps_html
+        else '<p class="empty">No steps.</p>'
+    )
+
     contract_block = (
         f"<pre>{_esc(json.dumps(detail.task_contract, ensure_ascii=False, indent=2))}</pre>"
         if detail.task_contract
-        else '<p class="empty">No task_contract on stored states.</p>'
+        else '<p class="empty">No task_contract.</p>'
     )
     assessment_block = (
         f"<pre>{_esc(json.dumps(detail.completion_assessment, ensure_ascii=False, indent=2))}</pre>"
         if detail.completion_assessment
-        else '<p class="empty">No completion_assessment stored.</p>'
-    )
-    step_rows = []
-    for step in detail.steps:
-        step_rows.append(
-            "<tr>"
-            f"<td>{step.step_index}</td>"
-            f'<td class="mono">{_esc(step.operator)}</td>'
-            f"<td>{_esc(step.objective)}</td>"
-            f"<td>{_esc(step.observation_summary)}</td>"
-            f"<td>{_esc(step.observation_status)}</td>"
-            "</tr>"
-        )
-    steps_html = (
-        "".join(step_rows) if step_rows else '<tr><td colspan="5" class="empty">No steps.</td></tr>'
-    )
-    eval_rows = []
-    for run in detail.eval_runs:
-        eval_rows.append(
-            "<tr>"
-            f'<td class="mono">{_esc(run.eval_run_id)}</td>'
-            f"<td>{_esc(run.disagreement_bucket)}</td>"
-            f"<td>{_esc(run.deterministic_verdict)} / {_esc(run.judge_verdict)}</td>"
-            f"<td>{_esc(run.model)}</td>"
-            f'<td class="muted mono">{_esc(run.created_at)}</td>'
-            "</tr>"
-        )
-    eval_html = (
-        "".join(eval_rows)
-        if eval_rows
-        else '<tr><td colspan="5" class="empty">No eval_runs for this task.</td></tr>'
+        else '<p class="empty">No completion_assessment.</p>'
     )
     failed = ", ".join(detail.failed_criteria) if detail.failed_criteria else "—"
+
     body = f"""
-    <nav class="crumbs"><a href="/">← Tasks</a></nav>
-    <p class="banner">{_esc(detail.disclaimer)}</p>
-    <div class="section">
-      <h2>Task</h2>
-      <dl class="kv">
-        <dt>task_id</dt><dd class="mono">{_esc(detail.task_id)}</dd>
-        <dt>status</dt><dd>{_esc(detail.status)}</dd>
-        <dt>db</dt><dd class="mono">{_esc(db_path)}</dd>
-        <dt>goal</dt><dd>{_esc(detail.goal)}</dd>
-        <dt>final_answer</dt><dd>{_esc(detail.final_answer or "—")}</dd>
-        <dt>termination</dt><dd>{_esc(detail.termination_reason or "—")}</dd>
-        <dt>citation</dt><dd>{_esc(detail.citation_validation)}</dd>
-        <dt>completion</dt><dd>{_esc(detail.completion_verdict)}</dd>
-        <dt>failed_criteria</dt><dd>{_esc(failed)}</dd>
-      </dl>
-    </div>
-    <div class="section">
-      <h2>Task contract</h2>
-      {contract_block}
-    </div>
-    <div class="section">
-      <h2>Completion assessment</h2>
-      {assessment_block}
-    </div>
-    <div class="section">
-      <h2>Steps</h2>
-      <table>
-        <thead>
-          <tr><th>#</th><th>Operator</th><th>Objective</th><th>Observation</th><th>Status</th></tr>
-        </thead>
-        <tbody>{steps_html}</tbody>
-      </table>
-    </div>
-    <div class="section">
-      <h2>Eval runs (read-only)</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>eval_run_id</th>
-            <th>Disagreement</th>
-            <th>Det / Judge</th>
-            <th>Model</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>{eval_html}</tbody>
-      </table>
-    </div>
+  <div class="page" data-session-enabled="{1 if session_enabled else 0}" data-page="detail">
+    {_topbar(session_enabled=session_enabled)}
+    {_settings_modal(base_url=base_url, model=model, session_enabled=session_enabled)}
+    <nav class="crumbs"><a href="/" data-i18n="back">← Session</a></nav>
+    <header class="detail-hero">
+      <p class="chip" data-i18n="local_chip">localhost session</p>
+      <h1>{_esc(detail.goal or "(no goal)")}</h1>
+      <div class="meta-row">
+        <span class="mono">{_esc(detail.task_id)}</span>
+        <span class="status-pill">{_esc(detail.status)}</span>
+        <span class="mono">{_esc(db_path)}</span>
+      </div>
+      <div class="actions">{"".join(actions)}</div>
+    </header>
+    <section class="answer-block">
+      <h2 data-i18n="final_answer">Final answer</h2>
+      <div class="body">{_esc(detail.final_answer or "—")}</div>
+    </section>
+    <section class="panel">
+      <h2 data-i18n="steps">Steps</h2>
+      {timeline}
+      <details class="fold">
+        <summary>Contract &amp; quality</summary>
+        <p class="muted">failed: {_esc(failed)} · termination: {_esc(detail.termination_reason or "—")}</p>
+        {contract_block}
+        {assessment_block}
+      </details>
+    </section>
+  </div>
     """
-    return _page(f"Task {detail.task_id[:8]}", body)
+    return _shell(f"Heuriva · {detail.task_id[:8]}", body)
 
 
 def render_not_found(message: str) -> str:
     body = f"""
-    <nav class="crumbs"><a href="/">← Tasks</a></nav>
-    <div class="section">
-      <h2>Not found</h2>
-      <p>{_esc(message)}</p>
-    </div>
+  <div class="page">
+    {_topbar(session_enabled=False)}
+    <section class="hero"><h1>404</h1><p>{_esc(message)}</p></section>
+  </div>
     """
-    return _page("Not found", body)
+    return _shell("Not found", body)
 
 
 def render_error(message: str) -> str:
     body = f"""
-    <div class="section">
-      <h2>Error</h2>
-      <p>{_esc(message)}</p>
-    </div>
+  <div class="page">
+    {_topbar(session_enabled=False)}
+    <section class="hero"><h1>Error</h1><p>{_esc(message)}</p></section>
+  </div>
     """
-    return _page("Error", body)
+    return _shell("Error", body)
 
 
 def wants_json(headers: Any, query: dict[str, list[str]]) -> bool:

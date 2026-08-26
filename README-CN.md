@@ -4,7 +4,7 @@
 
 Heuriva 是一个用 Python 写的 **CLI 认知运行时**：让语言模型在显式状态、动态操作选择和可落库轨迹的帮助下，一步一步求解任务。
 
-它不是通用 Agent 框架，不是消息网关，也不是以 SDK 为先的库。用户入口就是 `heuriva` 命令行。
+它不是通用 Agent 框架，不是消息网关，也不是以 SDK 为先的库。日常入口是 `heuriva` 命令行，以及本机 **Session UI**（`heuriva serve`）。可选的 **Tauri** 安装包只是同一套 Session 面的薄壳 + Python sidecar——不是远程 dashboard，不是飞书，也不是 VERIFY。
 
 ## 它做什么
 
@@ -13,7 +13,7 @@ Heuriva 是一个用 Python 写的 **CLI 认知运行时**：让语言模型在�
 - **Controller 只选 operator**；**ExecutorRouter** 用确定性规则映射执行器。
 - 每一步已提交的 state / decision / observation 写入本地 SQLite。
 - 答案引用必须能回映射到已保存 evidence；完成度按任务合同评估（默认 quality mode 为 `observe`）。
-- 可用 CLI 或本机只读浏览器（`heuriva serve`）检视轨迹，并用 `heuriva resume` 从中断处安全续跑。
+- 可用 CLI 或本机 **Session UI**（`heuriva serve`）发任务、浏览最近列表、看详情、续跑；可选 Tauri `.dmg` / `.exe` 安装包是同一 UI 的薄壳。
 
 ## 快速开始
 
@@ -29,11 +29,12 @@ heuriva run --trace "分析这个项目是否值得做成产品"
 默认对接 OpenAI-compatible 端点（`http://localhost:8765/v1`，`model: auto`）。可用 `HEURIVA_LLM_BASE_URL` / `HEURIVA_LLM_MODEL` 指向任意兼容的 chat completions 服务。
 
 ```bash
-# 检视
+# 检视 / Session
 heuriva list                     # 最近任务：缩略 id + status + goal
 heuriva list --json --limit 50
 heuriva show --trace <task_id>
-heuriva serve                    # 本机只读 UI
+heuriva serve                    # 本机 Session UI（发任务 / 列表 / 续跑）
+heuriva serve --read-only        # 仅只读检视
 heuriva eval <task_id>           # 只读质量摘要
 heuriva eval --judge <task_id>   # 显式 opt-in 的模型评判
 
@@ -43,6 +44,15 @@ heuriva resume <task_id>
 # 默认离线的回归套件
 heuriva eval-suite
 ```
+
+桌面安装包（可选；Tauri 壳 + Python sidecar，同一 Session UI）：
+
+```bash
+./scripts/build-desktop.sh           # macOS .dmg / .app
+./scripts/build-desktop-windows.sh   # Windows best effort
+```
+
+详见 `desktop/README.md`。未签名本地包可能触发 Gatekeeper / SmartScreen。
 
 结构化完成合同（可选）：
 
@@ -102,11 +112,12 @@ flowchart TD
 | 区域 | 责任 |
 | --- | --- |
 | `cli.py` | `setup`、`doctor`、`run`、`resume`、`list`、`show`、`eval`、`eval-suite`、`serve` |
-| `runtime/` | 循环、guard、校验、resume 资格判定 |
+| `runtime/` | 循环、guard、校验、resume 资格判定、engine factory |
 | `controller/` | 结构化 operator 选择与 JSON 修复 |
 | `executors/` | ANALYZE / ANSWER（LLM）与 SEARCH |
 | `storage/` | SQLite 轨迹与 `eval_runs` |
-| `web/` | 本机只读轨迹浏览器 |
+| `web/` | 本机 Session UI + 轨迹检视 |
+| `desktop/` | 可选 Tauri 2 壳 + Python sidecar 安装包 |
 
 ## 日常怎么用
 
@@ -116,8 +127,9 @@ flowchart TD
 4. **Ctrl+C** — 退出码 `130`，已提交步骤保留为 `interrupted`；用打印出的 task id 续跑。
 5. **`heuriva list`** — 看最近任务的缩略 id、状态、步数与 goal 摘要。
 6. **`heuriva resume <task_id>`** — 从最后提交状态继续（`done` 默认拒绝，除非 `--force`）。
-7. **`heuriva show` / `serve`** — 只读检视，不重跑。
+7. **`heuriva show` / `serve`** — 检视；`serve` 为 Session UI（`--read-only` 仅只读）。
 8. **`heuriva eval`** — 汇总质量信号；`--judge` 必须显式开启，且不改写原轨迹。
+9. **桌面（可选）** — `./scripts/build-desktop.sh` 构建 Tauri 壳 + sidecar 安装包。
 
 配置在 `~/.heuriva/`。API key 只走环境变量（`HEURIVA_API_KEY`），不进 YAML / SQLite。启用搜索时，query 会发给第三方搜索服务；摘要一律当作不可信外部数据。
 
@@ -128,7 +140,7 @@ flowchart TD
 | | Heuriva | OpenClaw | Hermes Agent |
 | --- | --- | --- | --- |
 | 主职 | 显式认知运行时 + 轨迹可复验 | 网关 / 多通道控制面 | Agent 优先运行时 + 技能学习 |
-| 交互面 | CLI（+ 本机检视页） | 大量即时通讯通道 + CLI | TUI / 桌面（+ 网关） |
+| 交互面 | CLI + 本机 Session UI（+ 可选 Tauri 安装包） | 大量即时通讯通道 + CLI | TUI / 桌面（+ 网关） |
 | 能力面 | 固定三操作：ANALYZE / SEARCH / ANSWER | 大技能生态与集成面 | 内置工具 + Agent 自写技能 |
 | 「记忆」 | SQLite 轨迹（过程证据），不是长期记忆产品 | 会话 / 文件 / 生态记忆 | 持久记忆 + 程序性技能记忆 |
 | 学习 | 非目标（记录 ≠ 学会） | 人工技能 / 市场 | 自改进程序性技能 |
@@ -143,7 +155,7 @@ flowchart TD
 
 - 默认不开 `VERIFY` operator、默认不开语义 `enforce`、默认不开 fresh judge
 - 不做 MCP、多 Agent 角色、shell/文件系统/Python executor，也不做超出搜索 API 的爬虫
-- 不做远程多租户 dashboard（`serve` 仅本机）
+- 不做远程多租户 dashboard（Session UI / `serve` 仅本机；Tauri 是薄本地壳）
 - 不把程序性学习 / policy lifecycle 当作已交付产品能力
 - Resume 不是完整实验回放台，也不是可任意改历史的时间旅行编辑器
 
@@ -159,7 +171,11 @@ flowchart TD
 .venv/bin/pytest
 .venv/bin/heuriva --version
 .venv/bin/heuriva eval-suite --json
+.venv/bin/heuriva serve --help
 .venv/bin/heuriva resume --help
+# 可选打包
+# ./scripts/build-sidecar.sh
+# ./scripts/build-desktop.sh
 ```
 
 真实 LLM / 搜索测试需显式开启：
