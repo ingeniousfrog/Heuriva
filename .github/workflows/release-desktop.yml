@@ -236,6 +236,21 @@ jobs:
           draft: false
           prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
           generate_release_notes: true
+          body: |
+            ## Install — macOS
+            1. Open the `.dmg` → drag **Heuriva** to **Applications**.
+            2. First launch: right-click → **Open**.
+            3. If macOS says the app is **“damaged and can’t be opened”** (unsigned / quarantine):
+
+            ```bash
+            xattr -cr /Applications/Heuriva.app
+            ```
+
+            ## Install — Windows
+            1. Run `Heuriva_*_x64-setup.exe` (or the `.msi`).
+            2. If **SmartScreen** blocks it: **More info** → **Run anyway**.
+
+            Config / SQLite: `~/.heuriva` (same as CLI).
           files: upload/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
