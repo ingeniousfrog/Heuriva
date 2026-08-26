@@ -42,20 +42,29 @@ Heuriva 回答的是：**「这个模型是怎样一步一步解完这道题的�
 
 ## 桌面安装包 (macOS / Windows)
 
-安装包由 GitHub Actions 构建，发布在 [Releases](https://github.com/ingeniousfrog/Heuriva/releases)。
+最新版：**[v1.0.0](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.0)** · 全部产物见 [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
 
-| 平台 | 产物 |
+| 平台 | 下载 |
 |------|------|
-| macOS Apple Silicon | `*.dmg` / `.app.zip`（`aarch64-apple-darwin`） |
-| Windows x64 | NSIS `.exe` / MSI |
+| **macOS**（Apple Silicon） | [Heuriva_1.0.0_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva-aarch64-apple-darwin.app.zip) |
+| **Windows**（x64） | [Heuriva_1.0.0_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64_en-US.msi) |
+
+**安装（macOS）：** 打开 dmg → 把 **Heuriva** 拖进 Applications。  
+未签名包若被 Gatekeeper 拦截：右键 → **打开**，或：
+
+```bash
+xattr -cr /Applications/Heuriva.app
+```
+
+**安装（Windows）：** 运行 NSIS `.exe`（或 MSI）按向导安装；首次可能触发 SmartScreen。
+
+配置与数据库仍在 `~/.heuriva`（与 CLI 相同）。详见 [`desktop/README.md`](desktop/README.md)。
 
 ```bash
 # 或本地构建
-./scripts/build-desktop.sh           # macOS
+./scripts/build-desktop.sh           # macOS（Apple Silicon）
 ./scripts/build-desktop-windows.sh   # Windows（尽力支持）
 ```
-
-未签名包首次打开可能触发 Gatekeeper / SmartScreen。配置与数据库仍在 `~/.heuriva`（与 CLI 相同）。详见 [`desktop/README.md`](desktop/README.md)。
 
 ## 快速开始
 

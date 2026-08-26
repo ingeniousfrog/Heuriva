@@ -41,20 +41,29 @@ It is **not** a multi-channel agent gateway, not a remote dashboard, and not a V
 
 ## Desktop (macOS / Windows)
 
-Installers are built by GitHub Actions and published on the [Releases](https://github.com/ingeniousfrog/Heuriva/releases) page.
+Latest: **[v1.0.0](https://github.com/ingeniousfrog/Heuriva/releases/tag/v1.0.0)** · all builds on [Releases](https://github.com/ingeniousfrog/Heuriva/releases)
 
-| Platform | Artifact |
+| Platform | Download |
 |----------|----------|
-| macOS Apple Silicon | `*.dmg` / `.app.zip` (`aarch64-apple-darwin`) |
-| Windows x64 | NSIS `.exe` / MSI |
+| **macOS** (Apple Silicon) | [Heuriva_1.0.0_aarch64.dmg](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_aarch64.dmg) · [`.app.zip`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva-aarch64-apple-darwin.app.zip) |
+| **Windows** (x64) | [Heuriva_1.0.0_x64-setup.exe](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64-setup.exe) · [`.msi`](https://github.com/ingeniousfrog/Heuriva/releases/download/v1.0.0/Heuriva_1.0.0_x64_en-US.msi) |
+
+**Install (macOS):** open the dmg → drag **Heuriva** to Applications.  
+If Gatekeeper blocks an unsigned build, right-click → **Open**, or:
+
+```bash
+xattr -cr /Applications/Heuriva.app
+```
+
+**Install (Windows):** run the NSIS `.exe` (or MSI) and follow the wizard. SmartScreen may warn on first run.
+
+Config and SQLite stay under `~/.heuriva` (same as CLI). See [`desktop/README.md`](desktop/README.md).
 
 ```bash
 # Or build locally
-./scripts/build-desktop.sh           # macOS
+./scripts/build-desktop.sh           # macOS (Apple Silicon)
 ./scripts/build-desktop-windows.sh   # Windows (best effort)
 ```
-
-Unsigned builds may trip Gatekeeper / SmartScreen on first open. Config and SQLite stay under `~/.heuriva` (same as CLI). See [`desktop/README.md`](desktop/README.md).
 
 ## Quick start
 
