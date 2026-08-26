@@ -25,6 +25,11 @@ from heuriva.redaction import redact_text
 from heuriva.runtime.completion_validation import CompletionValidationResult, CompletionValidator
 from heuriva.runtime.executor_router import ExecutorRouter
 from heuriva.runtime.progress_policy import ProgressPolicyResult, evaluate_progress_policy
+from heuriva.runtime.resume import (
+    ResumeEligibility,
+    assess_resume_eligibility,
+    config_snapshot_warnings,
+)
 from heuriva.runtime.search_policy import SearchGuardResult, evaluate_search_guard
 from heuriva.runtime.state_delta import StateDelta, calculate_state_delta
 from heuriva.runtime.state_updater import StateUpdater
@@ -62,6 +67,16 @@ class RuntimeResult:
     final_answer: str | None
     steps: list[RuntimeStep]
     trace_lines: list[str]
+    resumed: bool = False
+
+
+class ResumeRejected(ValueError):
+    def __init__(self, eligibility: ResumeEligibility) -> None:
+        self.eligibility = eligibility
+        super().__init__(
+            f"cannot resume task {eligibility.task_id}: {eligibility.reason} "
+            f"(status={eligibility.task_status})"
+        )
 
 
 class RuntimeInterrupted(KeyboardInterrupt):
@@ -113,23 +128,119 @@ class RuntimeEngine:
         self.store.create_task_with_trajectory(
             state, config_snapshot=self.config.redacted_snapshot()
         )
+        return self._run_loop(
+            task_id=task_id,
+            state=state,
+            prior_steps=(),
+            trace=trace,
+            progress=progress,
+            resumed=False,
+            start_message="started task",
+        )
+
+    def resume(
+        self,
+        task_id: str,
+        *,
+        force: bool = False,
+        trace: bool = False,
+        progress: ProgressCallback | None = None,
+    ) -> RuntimeResult:
+        cleaned = task_id.strip()
+        if not cleaned:
+            raise ValueError("task_id must not be empty")
+        try:
+            bundle = self.store.load_resume_bundle(cleaned)
+        except KeyError as exc:
+            raise KeyError(cleaned) from exc
+        warnings = config_snapshot_warnings(
+            bundle["config_snapshot"],
+            self.config.redacted_snapshot(),
+        )
+        eligibility = assess_resume_eligibility(
+            task_id=cleaned,
+            task_status=str(bundle["task_status"]),
+            step_count=len(bundle["steps"]),
+            force=force,
+            has_latest_state=True,
+            config_warnings=warnings,
+        )
+        if not eligibility.eligible:
+            raise ResumeRejected(eligibility)
+        latest_state: CognitiveState = bundle["latest_state"]
+        prior_steps = self._runtime_steps_from_bundle(bundle["steps"])
+        resume_state = latest_state
+        if resume_state.status is not StateStatus.RUNNING:
+            resume_state = resume_state._replace(
+                status=StateStatus.RUNNING,
+                revision_index=resume_state.revision_index + 1,
+            )
+        self.store.prepare_resume(
+            task_id=cleaned,
+            resume_state=resume_state,
+            reason="resumed",
+        )
+        self.store.log_event(
+            RuntimeEvent(
+                task_id=cleaned,
+                step_index=resume_state.step_index,
+                event_type="task_resumed",
+                level=EventLevel.INFO,
+                payload={
+                    "previous_status": eligibility.task_status,
+                    "reason": eligibility.reason,
+                    "force": force,
+                    "step_count": eligibility.step_count,
+                    "warnings": list(eligibility.warnings),
+                },
+            )
+        )
+        warning_text = ""
+        if eligibility.warnings:
+            warning_text = f"; warnings={', '.join(eligibility.warnings)}"
+        return self._run_loop(
+            task_id=cleaned,
+            state=resume_state,
+            prior_steps=prior_steps,
+            trace=trace,
+            progress=progress,
+            resumed=True,
+            start_message=(
+                f"resumed task from status={eligibility.task_status} "
+                f"with {eligibility.step_count} committed steps{warning_text}"
+            ),
+        )
+
+    def _run_loop(
+        self,
+        *,
+        task_id: str,
+        state: CognitiveState,
+        prior_steps: tuple[RuntimeStep, ...],
+        trace: bool,
+        progress: ProgressCallback | None,
+        resumed: bool,
+        start_message: str,
+    ) -> RuntimeResult:
         started = time.monotonic()
-        steps: list[RuntimeStep] = []
+        steps: list[RuntimeStep] = list(prior_steps)
+        new_steps: list[RuntimeStep] = []
         trace_lines: list[str] = []
         consecutive_failures = 0
         final_answer: str | None = None
         status = StateStatus.MAX_STEPS_REACHED
         termination_reason = "max_steps_reached"
+        remaining_budget = max(0, self.config.runtime.max_steps - state.step_index)
         self._notify_progress(
             progress,
             task_id=task_id,
             step_index=state.step_index,
-            stage="task_started",
-            message="started task",
+            stage="task_started" if not resumed else "task_resumed",
+            message=start_message,
             started=started,
         )
         try:
-            for _ in range(self.config.runtime.max_steps):
+            for _ in range(remaining_budget):
                 if time.monotonic() - started > self.config.runtime.max_task_seconds:
                     status = StateStatus.FAILED
                     termination_reason = "max_task_seconds"
@@ -345,15 +456,15 @@ class RuntimeEngine:
                     state_delta=state_delta,
                 )
                 trace_lines.append(line)
-                steps.append(
-                    RuntimeStep(
-                        decision=decision,
-                        observation=observation,
-                        state=state_after,
-                        state_before=state,
-                        state_delta=state_delta,
-                    )
+                runtime_step = RuntimeStep(
+                    decision=decision,
+                    observation=observation,
+                    state=state_after,
+                    state_before=state,
+                    state_delta=state_delta,
                 )
+                steps.append(runtime_step)
+                new_steps.append(runtime_step)
                 next_action = "continue planning"
                 if status in {StateStatus.DONE, StateStatus.FAILED}:
                     next_action = "finalize task"
@@ -399,8 +510,9 @@ class RuntimeEngine:
                 task_id=task_id,
                 status=status.value,
                 final_answer=final_answer,
-                steps=steps,
+                steps=new_steps if resumed else steps,
                 trace_lines=trace_lines,
+                resumed=resumed,
             )
         except KeyboardInterrupt:
             terminal = state.terminal(status=StateStatus.INTERRUPTED)
@@ -420,6 +532,25 @@ class RuntimeEngine:
                 final_answer=None,
             )
             raise RuntimeInterrupted(task_id) from None
+
+    @staticmethod
+    def _runtime_steps_from_bundle(step_dicts: list[dict[str, object]]) -> tuple[RuntimeStep, ...]:
+        rebuilt: list[RuntimeStep] = []
+        for item in step_dicts:
+            decision = Decision.model_validate(item["decision"])
+            observation = Observation.model_validate(item["observation"])
+            state_before = CognitiveState.model_validate(item["state_before"])
+            state_after = CognitiveState.model_validate(item["state_after"])
+            rebuilt.append(
+                RuntimeStep(
+                    decision=decision,
+                    observation=observation,
+                    state=state_after,
+                    state_before=state_before,
+                    state_delta=calculate_state_delta(state_before, state_after),
+                )
+            )
+        return tuple(rebuilt)
 
     def _progress_policy_for_state(
         self, state: CognitiveState, steps: tuple[RuntimeStep, ...]

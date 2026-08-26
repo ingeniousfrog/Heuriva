@@ -1,369 +1,184 @@
 # Heuriva
 
-**Last Updated:** 2026-08-25
-
 [中文文档](README-CN.md)
 
-Heuriva is a Python CLI cognitive runtime for language models. v0.8 adds a
-**local read-only Trajectory Browser** (`heuriva serve`) on top of the v0.7
-quality lexicon and v0.6 Task Contract stack: inspect tasks, contracts,
-citations, completion assessments, and eval_runs in a browser without digging
-through CLI JSON.
+Heuriva is a Python **CLI cognitive runtime** for language models. It makes task
+solving explicit: structured state, one cognitive operator per step, and a full
+SQLite trajectory you can inspect, evaluate, and safely resume.
 
-v0.8 still uses only `ANALYZE`, `SEARCH`, and `ANSWER`. The browser does not call
-the model, rewrite trajectories, or change quality defaults. Fresh judge
-verdicts remain opt-in. Fake and synthetic suite results remain regression
-signals, not product proof.
+It is not a general-purpose agent framework, not a messaging gateway, and not a
+library-first SDK. The product surface is the `heuriva` CLI.
 
-## Current Status
+## What it does
 
-Release status: v0.8 ships a localhost-only read-only trajectory inspector.
-Defaults remain `observe`; `recommend_enforce` and `enter_verify_design` stay
-false unless §54 thresholds are separately met. Live checklists remain
-local-only and ignored by Git because they contain machine-specific task IDs.
+- Runs a task as a loop over three operators: `ANALYZE` → `SEARCH` → `ANSWER`
+  (chosen dynamically each step, not as a fixed pipeline).
+- Keeps an immutable `CognitiveState` and a stable `TaskContract`.
+- Separates **operator selection** (controller) from **executor routing**
+  (deterministic code).
+- Persists every committed step to local SQLite: state, decision, observation.
+- Validates citations against saved evidence; assesses completion against your
+  contract (default quality mode is observe, not silent rewrite).
+- Lets you inspect trajectories via CLI or a localhost-only read-only browser
+  (`heuriva serve`), and continue interrupted work with `heuriva resume`.
 
-Implemented in this repository:
-
-- Python package with `heuriva` CLI entry point
-- `heuriva setup`, `heuriva doctor`, `heuriva run`, interactive `heuriva`, and
-  `heuriva show`
-- Local read-only `heuriva serve` trajectory browser (list + detail; no model
-  calls from the UI)
-- Read-only `heuriva eval` and `heuriva eval --json` for saved trajectories
-- Opt-in `heuriva eval --judge` with provenance, disagreement buckets, promotion
-  advice, and a VERIFY design gate; eval runs persist separately from trajectories
-- Offline `heuriva eval-suite` / `heuriva eval-suite --json` over a versioned
-  corpus of synthetic, fake-integration, stored-live, and fresh-live cases
-- Aggregate suite reports with pass/fail/missing/skipped totals, evidence-level
-  separation, search/citation/completion signal rollups, promotion stats, and
-  VERIFY gate status
-- Forced harness coverage for forbidden-search, duplicate-query, enforce block,
-  bounded repair, citation-versus-completion separation, `exact_answer` extra
-  text, `must_not_include`, legacy string criterion compatibility, and Chinese
-  safety/tradeoffs lexicon matching
-- Shared narrow quality lexicon (`quality_lexicon`) used by completion and
-  relevance term expansion
-- Structured task criteria: `must_include`, `must_not_include`, `exact_answer`
-  (CLI flags and `kind:value` DSL; bare `--criterion` strings still work)
-- Deterministic completion assessment by criterion kind, with kind/reason on
-  criterion results; ANSWER prompts surface the same structured contract
-- Version visibility through `heuriva --version` and `heuriva doctor`
-- Local config under `~/.heuriva/`
-- OpenAI-compatible non-streaming `/v1/chat/completions` client
-- Operators: `ANALYZE`, `SEARCH`, `ANSWER`
-- LLM controller with structured JSON validation, `success_criteria`
-  normalization, SEARCH intent fields, and one repair attempt
-- Deterministic executor router that keeps operator selection separate from
-  executor selection
-- LLM and search executors
-- Immutable Pydantic v2 schemas for state, decision, observation, events,
-  trajectory records, task-level `TaskContract`, eval corpus cases, and judge
-  provenance
-- SQLite trajectory store with schema versioning (v2 adds `eval_runs`), foreign
-  keys, unique step constraints, and atomic step commits
-- Runtime-owned progress policy with same-operator, no-material-progress, and
-  answer-reserve guards
-- Runtime-owned search quality guards for forbidden search, local/provided
-  source scope, repeated queries, search budget, missing search intent, and
-  consecutive no-relevant-result steps
-- Search executor metadata that separates raw candidates, accepted evidence,
-  rejected candidates, and deterministic relevance verdicts
-- State delta rendering for concise trace, `show --trace`, and `show --json`
-- Evidence-aware ANSWER prompt plus deterministic `[S1]` citation validation
-  against saved state evidence
-- Deterministic completion assessment for stable task criteria and required
-  evidence, with `off`/`observe`/`enforce` quality modes, bounded repair
-  attempts, and a small deterministic equivalence table for common
-  Chinese/English quality terms
-- Retryable model HTTP failures controlled by `llm.max_retries`, with
-  `attempt_count` metadata
-- Search timeout classification, stale running task diagnostics, and opt-in live
-  smoke tests
-- Automated fake model/search tests for core v0.1 through v0.8 runtime and eval
-  paths
-
-Not implemented:
-
-- Learning policies, policy lifecycle, replay, dashboard, MCP,
-  shell/filesystem/Python executors, multi-agent workflows, URL crawling, daemon
-  mode, task resume, or concurrent queues
-- A separate `VERIFY` operator (design gate remains unmet; post-v0.5 live
-  evidence found fewer than two non-contract-repairable leak tasks)
-- Default semantic enforce; promotion rules keep quality modes at `observe`
-  until live corpus evidence justifies a narrower change
-- Default fresh judging; `--judge` is always explicit opt-in
-
-Live Cursor-compatible endpoint and real web search smoke tests are opt-in and
-are skipped by the default automated test suite.
-
-## Install For Development
+## Quick start
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-```
 
-The project is declared in `pyproject.toml` and requires Python 3.11 or newer.
-SQLite uses Python's standard library `sqlite3`.
-
-## Quick Start
-
-Create local config:
-
-```bash
-heuriva --version
 heuriva setup
-```
-
-Run diagnostics:
-
-```bash
-heuriva doctor
 heuriva doctor --probe
-heuriva doctor --probe --probe-timeout 30
-```
-
-Run a task:
-
-```bash
 heuriva run --trace "Analyze whether this project should become a product"
-heuriva run --json "Analyze whether this project should become a product"
-heuriva run --criterion "mention the tradeoffs" --search-policy forbidden \
-  "Explain the local project direction without web search"
-heuriva run --criterion-exact 'OK' "Return exactly OK and no other text."
-heuriva run --criterion 'exact_answer:OK' --criterion-must-not 'SECRET' \
-  "Return exactly OK"
 ```
 
-Long-running tasks stream live progress to stderr. When `--json` is used,
-stdout stays reserved for the final machine-readable JSON payload. Use
-`--no-progress` to suppress live status output.
-
-Failed tasks exit non-zero and include a `heuriva show --trace <task_id>`
-recovery command when a trajectory exists. Ctrl+C exits `130`; after the
-runtime has created the task, stderr includes the full `task_id` and matching
-`show --trace` command. Model endpoint failures keep a classified cause such as
-`connection_error` or `timeout` in progress and saved runtime events.
-
-Inspect a stored trajectory, browse locally, or run the offline eval suite:
+Default model config targets an OpenAI-compatible endpoint
+(`http://localhost:8765/v1`, `model: auto`). Point `HEURIVA_LLM_BASE_URL` /
+`HEURIVA_LLM_MODEL` at any compatible chat-completions service.
 
 ```bash
+# Inspect
 heuriva show --trace <task_id>
-heuriva show --json <task_id>
-heuriva serve
-heuriva serve --db ~/.heuriva/memory.db --port 8766
-heuriva eval <task_id>
-heuriva eval --json <task_id>
-heuriva eval --judge <task_id>
-heuriva eval --judge --json <task_id>
+heuriva serve                    # localhost read-only UI
+heuriva eval <task_id>           # read-only quality summary
+heuriva eval --judge <task_id>   # opt-in fresh model judge
+
+# Continue after Ctrl+C / failure (appends steps; never rewrites history)
+heuriva resume <task_id>
+
+# Offline regression suite (no network by default)
 heuriva eval-suite
-heuriva eval-suite --json
 ```
 
-`heuriva serve` starts a **localhost-only read-only** trajectory browser for the
-configured SQLite database (or `--db`). It lists tasks and shows contract,
-citation status, completion assessment (including criterion kind), steps, and
-optional eval_runs / disagreement. The UI does not call the model and does not
-rewrite `trajectory_steps`. Binding away from `127.0.0.1` requires an explicit
-`--host` and prints a warning — this is an inspector, not a remote multi-tenant
-dashboard.
-`heuriva eval` is read-only by default. It summarizes stored task contracts,
-search guards, raw/accepted/rejected evidence counts, citation status,
-completion verdicts, and parse-warning counts without replaying the task or
-calling the model.
-
-`heuriva eval --judge` is explicit opt-in. It calls the configured
-OpenAI-compatible model once (plus bounded parse repairs), records model /
-prompt-hash / timestamp provenance, reports disagreement against the
-deterministic completion verdict, and can persist an `eval_runs` row without
-rewriting the original trajectory. Use `--no-persist-eval` to skip storage.
-Judge results are never treated as objective truth.
-
-`heuriva eval-suite` defaults to offline deterministic/fake harness cases. It
-does not mutate `~/.heuriva/memory.db` for those harnesses. `stored_live` cases
-are summarized read-only when a local `task_id` exists; otherwise they are
-`missing`, not `fail`. `fresh_live` cases require `--include-fresh-live` or
-`HEURIVA_EVAL_SUITE_FRESH_LIVE=1` and remain clearly labeled. Suite reports also
-include promotion check advice and a VERIFY design gate conclusion.
-
-Start the simple REPL:
+Structured completion criteria (optional):
 
 ```bash
-heuriva --trace
+heuriva run --criterion-exact 'OK' "Return exactly OK and no other text."
+heuriva run --criterion 'must_include:tradeoffs' --search-policy forbidden \
+  "Explain the local project direction without web search"
 ```
 
-## Configuration
-
-`heuriva setup` creates:
+## Architecture
 
 ```text
-~/.heuriva/
-├── config.yaml
-├── .env
-└── memory.db   # created when storage is first opened
+CLI / config
+  → RuntimeEngine
+  → CognitiveState + TaskContract
+  → LLMController  (selects one operator)
+  → ExecutorRouter (ANALYZE/ANSWER → llm, SEARCH → search)
+  → OperationResult → validation (search / citation / completion)
+  → StateUpdater   (immutable next state)
+  → SQLiteStore    (atomic step commit)
+  → show / eval / serve / resume
 ```
 
-Default model config:
-
-```yaml
-llm:
-  base_url: http://localhost:8765/v1
-  model: auto
-  api_key_env: HEURIVA_API_KEY
-
-runtime:
-  max_steps: 20
-  max_task_seconds: 600
-  controller_repair_attempts: 1
-  max_consecutive_failures: 3
-  max_same_operator_streak: 3
-  max_no_progress_steps: 2
-  answer_reserve_steps: 2
-
-quality:
-  evidence_relevance_mode: observe
-  completion_check_mode: observe
-  max_search_steps: 3
-  max_no_relevant_search_steps: 1
-  max_completion_repairs: 1
-
-tools:
-  search:
-    enabled: true
-    max_results: 5
-    timeout_seconds: 15
+```mermaid
+flowchart TD
+    User["User / CLI"] --> CLI["heuriva.cli"]
+    CLI --> Config["config + ~/.heuriva"]
+    CLI --> Engine["RuntimeEngine"]
+    Config --> Model["OpenAI-compatible ModelClient"]
+    Config --> Search["SearchClient"]
+    Config --> Store["SQLiteStore"]
+    Engine --> Controller["LLMController"]
+    Controller --> Model
+    Engine --> Router["ExecutorRouter"]
+    Router --> LLMExec["LLMExecutor"]
+    Router --> SearchExec["SearchExecutor"]
+    LLMExec --> Model
+    SearchExec --> Search
+    Engine --> Store
+    Store --> Inspect["show / eval / serve / resume"]
 ```
 
-Supported environment overrides:
+### Design invariants
 
-- `HEURIVA_LLM_BASE_URL`
-- `HEURIVA_LLM_MODEL`
-- `HEURIVA_API_KEY`
-- `HEURIVA_DB_PATH`
-- `HEURIVA_EVAL_SUITE_FRESH_LIVE`
+| Concern | Approach |
+| --- | --- |
+| State | Immutable Pydantic snapshots; patches cannot rewrite goal/contract |
+| Control | Controller picks operator only; router maps executors |
+| Evidence | Search candidates vs accepted evidence; only accepted evidence counts as progress |
+| Answers | Citation labels like `[S1]` must map to saved evidence |
+| Quality | Deterministic checks + optional model assessor/judge; defaults stay `observe` |
+| Persistence | One atomic SQLite transaction per committed step |
+| Resume | Reload last committed state; append new steps; never edit history |
 
-API keys are read from environment variables and are not written to YAML,
-SQLite, or trace output. The SQLite database is a local plaintext trajectory
-store, not encrypted memory.
+### Module map
 
-Search is enabled by default. Search queries are sent to the configured
-third-party search provider, and search snippets are treated as untrusted
-external data.
+| Area | Responsibility |
+| --- | --- |
+| `cli.py` | `setup`, `doctor`, `run`, `resume`, `show`, `eval`, `eval-suite`, `serve` |
+| `runtime/` | Loop, guards, validation, resume eligibility |
+| `controller/` | Structured operator selection + JSON repair |
+| `executors/` | ANALYZE / ANSWER (LLM) and SEARCH |
+| `storage/` | SQLite trajectory + eval_runs |
+| `web/` | Localhost read-only trajectory browser |
 
-Quality modes accept `off`, `observe`, or `enforce`. Defaults remain `observe`.
-`enforce` is available for local experiments and forced harness coverage, but
-v0.4 does not recommend semantic enforce by default: deterministic/fake suite
-green is necessary but not sufficient without live corpus review.
+## How to use (day-to-day)
 
-## Runtime Shape
+1. **`heuriva setup`** — create `~/.heuriva/config.yaml`, `.env`, and DB path.
+2. **`heuriva doctor`** — check config, schema, stale running tasks; `--probe` for a minimal chat call.
+3. **`heuriva run "..."`** — execute a new task; progress on stderr; `--json` keeps stdout clean.
+4. **Ctrl+C** — exits `130`, keeps committed steps as `interrupted`; resume with the printed task id.
+5. **`heuriva resume <task_id>`** — continue from the last committed state (rejects `done` unless `--force`).
+6. **`heuriva show` / `serve`** — inspect without re-running.
+7. **`heuriva eval`** — summarize quality signals; `--judge` is explicit and does not rewrite the trajectory.
 
-For each task, Heuriva creates an initial immutable `CognitiveState` with a
-stable `TaskContract`, then loops until it reaches `done`, `failed`,
-`max_steps_reached`, or `interrupted`.
+Config lives under `~/.heuriva/`. API keys stay in env vars (`HEURIVA_API_KEY`), never in YAML or SQLite. Search queries go to a third-party provider when search is enabled; snippets are treated as untrusted data.
 
-Each committed operator step stores:
+## Heuriva vs OpenClaw vs Hermes Agent
 
-- state before the step
-- validated decision
-- executor observation
-- state after the step
-- trajectory step row
+These solve different jobs. Heuriva is a **small, inspectable cognitive loop** for
+studying and controlling how a frozen-weight model solves tasks. OpenClaw and
+Hermes are broader **personal / multi-channel agent platforms**.
 
-The controller chooses an operator only. The runtime-owned `ExecutorRouter`
-maps:
+| | Heuriva | OpenClaw | Hermes Agent |
+| --- | --- | --- | --- |
+| Primary job | Explicit cognitive runtime + trajectory science | Gateway / multi-channel control plane | Agent-first runtime with skill learning |
+| Interface | CLI (+ localhost inspector) | Many messaging channels + CLI | TUI / desktop (+ gateways) |
+| Operators / tools | Fixed trio: ANALYZE / SEARCH / ANSWER | Large skill + integration surface | Built-in tools + agent-written skills |
+| Memory story | SQLite trajectory (process evidence), not long-term “memory product” | Session / files / ecosystem memory | Persistent + procedural skill memory |
+| Learning | Not a goal (recording ≠ learning) | Human-authored skills / marketplace | Self-improving procedural skills |
+| Model I/O | OpenAI-compatible chat completions | Model-agnostic | Model-agnostic |
+| Best fit | Reproducible task traces, contracts, eval, safe resume | Reach: put an agent where users already chat | Autonomy: agents that refine their own skills |
 
-```text
-ANALYZE -> llm
-SEARCH  -> search
-ANSWER  -> llm
-```
+**Use Heuriva when** you care about *why* each step was chosen, whether evidence
+was accepted, whether the answer met a contract, and whether you can resume
+without rewriting history.
 
-Before each controller decision, the runtime applies a deterministic progress
-policy. It can narrow the available operators when repeated steps stop changing
-material state, when the same operator repeats too long, or when the task is
-inside the answer reserve. Guard interventions are written as runtime events
-and shown in progress output.
+**Use OpenClaw / Hermes when** you need messaging reach, large tool ecosystems,
+or agents that accumulate reusable skills over time. Heuriva deliberately does
+not try to replace those products.
 
-Material progress is limited to structured state changes such as new evidence,
-known items backed by evidence, resolved unknowns, new failure classification,
-or a validated final answer. Bookkeeping-only changes, repeated content, and
-confidence-only changes do not count.
+## Boundaries (intentionally out of scope)
 
-If `SEARCH` has saved evidence, a successful `ANSWER` must cite at least one
-known label such as `[S1]`. Unknown labels or missing required citations produce
-an `answer_validation_error` observation instead of `done`, leaving the
-trajectory readable and allowing a later ANSWER attempt within the remaining
-budget.
+- No default `VERIFY` operator, no default semantic `enforce`, no default fresh judge
+- No MCP, multi-agent roles, shell/filesystem/Python executors, or URL crawling beyond search APIs
+- No remote multi-tenant dashboard (serve is localhost-only)
+- No procedural learning / policy lifecycle as a shipped product feature
+- Resume is not a full experiment replay lab or time-travel editor
 
-SEARCH decisions carry `query`, `evidence_need`, `expected_signal`, and
-`source_scope`. The runtime can block Web search before the provider call when
-the user forbids search, the controller marks the source as local/provided, the
-query repeats, the search budget is exhausted, or recent searches produced no
-accepted evidence.
+## Development
 
-Search results are stored as raw candidates in observation metadata. Only
-accepted evidence is written into state and can count as material progress.
-Completion assessment is separate from citation validation: citation checks
-prove labels map to saved evidence, while completion assessment checks stable
-criteria and required evidence according to the configured quality mode.
-
-## Verification
-
-Automated checks used for this implementation:
+Requires Python 3.11+.
 
 ```bash
+.venv/bin/pip install -e '.[dev]'
 .venv/bin/ruff format --check .
 .venv/bin/ruff check .
 .venv/bin/mypy src tests
 .venv/bin/pytest
-.venv/bin/pytest --cov=heuriva --cov-report=term-missing
-.venv/bin/python -m hatchling build
 .venv/bin/heuriva --version
-.venv/bin/heuriva eval --help
-.venv/bin/heuriva eval-suite --help
-.venv/bin/heuriva serve --help
 .venv/bin/heuriva eval-suite --json
+.venv/bin/heuriva resume --help
 ```
 
-The fake test suite covers schema immutability, config precedence, redaction,
-OpenAI-compatible client response handling, controller malformed JSON repair,
-controller `success_criteria` normalization, router separation, state patch
-application, SQLite rollback, CLI setup/doctor, live run progress on stderr
-without polluting JSON stdout, loop guard behavior, state delta rendering,
-citation validation and repair, model retry accounting, search timeout
-classification, stale task diagnostics, task contracts, search guards, evidence
-relevance accounting, non-duplicated eval evidence counts, completion enforce
-mode, bounded completion repair, common Chinese/English criterion matching,
-structured `exact_answer` / `must_not_include` / legacy string criteria,
-read-only eval output, opt-in `--judge` provenance/disagreement persistence,
-eval corpus schema, offline eval-suite reports, stored-live missing/summary
-behavior, SQLite schema migration to `eval_runs`, the read-only trajectory
-browser list/detail path, and dynamic runtime paths
-including `ANALYZE -> SEARCH -> ANSWER`, `ANALYZE -> ANSWER`, and
-`SEARCH -> ANSWER(validation error) -> ANSWER`.
-
-The current automated suite reports the default pytest run green with 2 skipped
-live tests. The 0.8.0 wheel and sdist build locally.
-
+Live LLM/search tests are opt-in:
 
 ```bash
-heuriva doctor --probe --probe-timeout 30
 HEURIVA_RUN_LIVE_LLM_TESTS=1 .venv/bin/pytest tests/live/test_live_llm.py
 HEURIVA_RUN_LIVE_SEARCH_TESTS=1 .venv/bin/pytest tests/live/test_live_search.py
 ```
 
-A successful small `doctor --probe` confirms only the minimal protocol path. It
-does not prove a full multi-step product run or search quality. Use
-`--probe-timeout` when a local or Cursor-compatible model needs more than the
-default quick probe timeout to return its first token.
-
-The pytest live smoke files are opt-in and remain skipped by default. v0.8 live
-acceptance should be recorded in the ignored local checklist; it is not implied
-by the fake suite or the package build.
-
-## Planned Next
-
-v0.8 Local Trajectory Browser is implemented. VERIFY remains closed until §54
-is met; citation validation already exists and is only displayed in the UI.
-Default quality modes stay `observe`. See local `plan.md` §70–§75 and
-`docs/roadmap-v0.8.md`.
+License: MIT.

@@ -10,7 +10,7 @@ from heuriva.core.common import new_id, utc_now
 from heuriva.core.decision import Decision
 from heuriva.core.event import RuntimeEvent
 from heuriva.core.observation import Observation
-from heuriva.core.state import CognitiveState
+from heuriva.core.state import CognitiveState, StateStatus
 from heuriva.runtime.state_delta import calculate_state_delta
 
 SCHEMA_VERSION = 2
@@ -217,6 +217,122 @@ class SQLiteStore:
                 (task_id,),
             ).fetchone()
         return int(row["n"]) if row is not None else 0
+
+    def trajectory_step_fingerprints(self, task_id: str) -> tuple[str, ...]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT id, step_index, decision_id, observation_id,
+                       state_before_id, state_after_id
+                FROM trajectory_steps
+                WHERE task_id = ?
+                ORDER BY step_index
+                """,
+                (task_id,),
+            ).fetchall()
+        return tuple(
+            "|".join(
+                (
+                    str(row["step_index"]),
+                    row["id"],
+                    row["decision_id"],
+                    row["observation_id"],
+                    row["state_before_id"],
+                    row["state_after_id"],
+                )
+            )
+            for row in rows
+        )
+
+    def load_resume_bundle(self, task_id: str) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            task = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if task is None:
+                raise KeyError(task_id)
+            trajectory = conn.execute(
+                "SELECT * FROM trajectories WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if trajectory is None:
+                raise KeyError(task_id)
+            latest_state_row = conn.execute(
+                """
+                SELECT state_json
+                FROM states
+                WHERE task_id = ?
+                ORDER BY revision_index DESC
+                LIMIT 1
+                """,
+                (task_id,),
+            ).fetchone()
+            if latest_state_row is None:
+                raise RuntimeError(f"task {task_id} has no CognitiveState snapshots")
+            step_rows = conn.execute(
+                """
+                SELECT
+                  ts.step_index,
+                  ts.created_at,
+                  d.decision_json,
+                  o.observation_json,
+                  state_before.state_json AS state_before_json,
+                  state_after.state_json AS state_after_json
+                FROM trajectory_steps ts
+                JOIN decisions d ON d.id = ts.decision_id
+                JOIN observations o ON o.id = ts.observation_id
+                JOIN states state_before ON state_before.id = ts.state_before_id
+                JOIN states state_after ON state_after.id = ts.state_after_id
+                WHERE ts.task_id = ?
+                ORDER BY ts.step_index
+                """,
+                (task_id,),
+            ).fetchall()
+        config_snapshot = json.loads(task["config_snapshot_json"])
+        return {
+            "task_id": task_id,
+            "goal": task["goal"],
+            "task_status": task["status"],
+            "config_snapshot": config_snapshot,
+            "trajectory_status": trajectory["status"],
+            "latest_state": CognitiveState.model_validate(
+                json.loads(latest_state_row["state_json"])
+            ),
+            "steps": [_step_row_to_dict(row) for row in step_rows],
+            "step_fingerprints": self.trajectory_step_fingerprints(task_id),
+        }
+
+    def prepare_resume(
+        self,
+        *,
+        task_id: str,
+        resume_state: CognitiveState,
+        reason: str,
+    ) -> None:
+        now = utc_now().isoformat()
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN")
+            try:
+                self._insert_state_if_missing(conn, resume_state)
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = ?, error_code = NULL, updated_at = ?, completed_at = NULL
+                    WHERE id = ?
+                    """,
+                    (StateStatus.RUNNING.value, now, task_id),
+                )
+                conn.execute(
+                    """
+                    UPDATE trajectories
+                    SET final_state_id = NULL, status = ?, final_answer = NULL,
+                        termination_reason = ?, completed_at = NULL
+                    WHERE task_id = ?
+                    """,
+                    ("running", reason, task_id),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def get_trajectory(self, task_id: str) -> dict[str, Any]:
         with closing(self._connect()) as conn:

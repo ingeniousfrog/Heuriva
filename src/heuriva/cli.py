@@ -27,7 +27,13 @@ from heuriva.evaluation import (
 )
 from heuriva.executors.llm import LLMExecutor
 from heuriva.executors.search import SearchExecutor
-from heuriva.runtime.engine import Executor, RuntimeEngine, RuntimeInterrupted, RuntimeProgress
+from heuriva.runtime.engine import (
+    Executor,
+    ResumeRejected,
+    RuntimeEngine,
+    RuntimeInterrupted,
+    RuntimeProgress,
+)
 from heuriva.storage.sqlite import SQLiteStore
 from heuriva.trace import render_saved_trajectory
 from heuriva.web.queries import TrajectoryBrowser
@@ -209,7 +215,8 @@ def run(
         typer.echo(
             "Interrupted. "
             f"task_id={exc.task_id}; "
-            f"use `heuriva show --trace {exc.task_id}` to inspect saved trajectory",
+            f"use `heuriva show --trace {exc.task_id}` to inspect, "
+            f"or `heuriva resume {exc.task_id}` to continue",
             err=True,
         )
         raise typer.Exit(130) from exc
@@ -251,6 +258,85 @@ def _emit_progress(event: RuntimeProgress, *, json_output: bool) -> None:
         f" {event.stage}{operator}: {message}",
         err=True,
     )
+
+
+@app.command()
+def resume(
+    task_id: Annotated[str, typer.Argument(help="Task ID to resume from saved trajectory.")],
+    trace: Annotated[bool, typer.Option("--trace", help="Show detailed trace.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+    progress_output: Annotated[
+        bool, typer.Option("--progress/--no-progress", help="Show live progress on stderr.")
+    ] = True,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help=(
+                "Allow resume of a done task. Still appends new steps only; "
+                "never rewrites committed history."
+            ),
+        ),
+    ] = False,
+) -> None:
+    cleaned = task_id.strip()
+    if not cleaned:
+        typer.echo("Task ID must not be empty.", err=True)
+        raise typer.Exit(2)
+    try:
+        engine = _build_engine()
+        progress: Callable[[RuntimeProgress], None] | None = None
+        if progress_output:
+            progress = partial(_emit_progress, json_output=json_output)
+        result = engine.resume(cleaned, force=force, trace=trace, progress=progress)
+    except KeyError as exc:
+        typer.echo(f"Task not found: {cleaned}", err=True)
+        raise typer.Exit(4) from exc
+    except ResumeRejected as exc:
+        typer.echo(str(exc), err=True)
+        typer.echo(
+            f"Inspect with `heuriva show --trace {exc.eligibility.task_id}` or `heuriva serve`.",
+            err=True,
+        )
+        raise typer.Exit(2) from exc
+    except RuntimeInterrupted as exc:
+        typer.echo(
+            "Interrupted. "
+            f"task_id={exc.task_id}; "
+            f"use `heuriva show --trace {exc.task_id}` to inspect, "
+            f"or `heuriva resume {exc.task_id}` to continue",
+            err=True,
+        )
+        raise typer.Exit(130) from exc
+    except KeyboardInterrupt as exc:
+        typer.echo("Interrupted.", err=True)
+        raise typer.Exit(130) from exc
+    except Exception as exc:
+        typer.echo(f"Resume failed: {exc}", err=True)
+        raise typer.Exit(3) from exc
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "task_id": result.task_id,
+                    "status": result.status,
+                    "final_answer": result.final_answer,
+                    "resumed": result.resumed,
+                },
+                ensure_ascii=False,
+            )
+        )
+    else:
+        for line in result.trace_lines:
+            typer.echo(line, err=True)
+        if result.final_answer:
+            typer.echo(result.final_answer)
+        else:
+            typer.echo(f"Task {result.task_id} ended with status {result.status}", err=True)
+    if result.status != "done":
+        raise typer.Exit(3)
 
 
 @app.command()

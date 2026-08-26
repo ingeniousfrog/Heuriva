@@ -27,6 +27,7 @@ def test_cli_help() -> None:
     assert result.exit_code == 0
     assert "run" in result.stdout
     assert "serve" in result.stdout
+    assert "resume" in result.stdout
 
 
 def test_cli_version() -> None:
@@ -254,3 +255,56 @@ def test_cli_doctor_reports_effective_runtime_diagnostics(
     assert "Search timeout: 15s" in result.stderr
     assert "Stale running tasks: 1" in result.stderr
     assert "Oldest stale task: task-stale" in result.stderr
+
+
+def test_cli_resume_rejects_done_and_accepts_interrupted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(app, ["setup"])
+    db_path = tmp_path / ".heuriva" / "memory.db"
+    store = SQLiteStore(db_path)
+    state = CognitiveState.new(task_id="task-done", goal="finished")
+    store.create_task_with_trajectory(state, config_snapshot={"llm": {"model": "auto"}})
+    done = state.terminal(status="done")
+    store.finalize_task(
+        task_id=state.task_id,
+        final_state=done,
+        status="done",
+        termination_reason="answer",
+        final_answer="ok",
+    )
+
+    rejected = runner.invoke(app, ["resume", state.task_id])
+    assert rejected.exit_code == 2
+    assert "already_done" in rejected.stderr
+
+    interrupted_state = CognitiveState.new(task_id="task-resume", goal="continue me")
+    store.create_task_with_trajectory(interrupted_state, config_snapshot={"llm": {"model": "auto"}})
+    terminal = interrupted_state.terminal(status="interrupted")
+    store.finalize_task(
+        task_id=interrupted_state.task_id,
+        final_state=terminal,
+        status="interrupted",
+        termination_reason="keyboard_interrupt",
+        final_answer=None,
+    )
+
+    def fake_resume(self: Any, task_id: str, **kwargs: Any) -> RuntimeResult:
+        del self, kwargs
+        return RuntimeResult(
+            task_id=task_id,
+            status="done",
+            final_answer="resumed-ok",
+            steps=[],
+            trace_lines=[],
+            resumed=True,
+        )
+
+    monkeypatch.setattr("heuriva.runtime.engine.RuntimeEngine.resume", fake_resume)
+    accepted = runner.invoke(app, ["resume", "--json", interrupted_state.task_id])
+    assert accepted.exit_code == 0
+    payload = json.loads(accepted.stdout)
+    assert payload["resumed"] is True
+    assert payload["final_answer"] == "resumed-ok"

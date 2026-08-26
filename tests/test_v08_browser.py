@@ -195,8 +195,8 @@ def test_extract_completion_assessment_keeps_kind() -> None:
     assert CompletionVerdict(assessment["verdict"]) is CompletionVerdict.PASS
 
 
-def test_version_is_v08() -> None:
-    assert __version__ == "0.8.0"
+def test_version_and_quality_defaults() -> None:
+    assert __version__ == "0.9.0"
     state = CognitiveState.new(
         task_id="browser-version",
         goal="x",
